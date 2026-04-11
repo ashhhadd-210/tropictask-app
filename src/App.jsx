@@ -1,0 +1,1201 @@
+import React, { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo } from 'react'
+import { SEED_DATA } from './lib/seedData'
+import { STAGES, getStage, ROLE_LABELS, ROLE_ICONS, WO_CATEGORIES, priBadge, priLabel, stageBadge, daysAgo } from './lib/constants'
+import { isSupabaseConfigured, signIn as supabaseSignIn, signUp as supabaseSignUp, signOut as supabaseSignOut, getSession as getSupabaseSession, fetchProfile, fetchProfiles, fetchProperties, fetchAllUserProperties, fetchWorkOrders, fetchPayments, fetchComponents, fetchReviews, createProperty as supabaseCreateProperty, updateProperty as supabaseUpdateProperty, deleteProperty as supabaseDeleteProperty, createWorkOrder as supabaseCreateWorkOrder, createPayment as supabaseCreatePayment, updatePaymentStatus as supabaseUpdatePaymentStatus, updateWorkOrderStage as supabaseUpdateWorkOrderStage, updateProfile as supabaseUpdateProfile } from './lib/supabase'
+
+/* ═══════════════════════════════════════════
+   PERSISTENT STORAGE
+   ═══════════════════════════════════════════ */
+const SK = 'tt-app-v3';
+function loadStore() {
+  try { const s = localStorage.getItem(SK); return s ? JSON.parse(s) : null; } catch { return null; }
+}
+function saveStore(d) {
+  try { localStorage.setItem(SK, JSON.stringify(d)); } catch {}
+}
+
+/* ═══════════════════════════════════════════
+   SEED DATA (matches dev doc schema)
+   ═══════════════════════════════════════════ */
+const SEED = SEED_DATA;
+
+/* ═══════════════════════════════════════════
+   CONTEXT
+   ═══════════════════════════════════════════ */
+const Ctx = createContext();
+const useApp = () => useContext(Ctx);
+
+/* ═══════════════════════════════════════════
+   WORK ORDER STAGE CONFIG (9-stage lifecycle)
+   ═══════════════════════════════════════════ */
+
+
+/* ═══════════════════════════════════════════
+   ICONS
+   ═══════════════════════════════════════════ */
+const I = (d,s=16,sw=1.75) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">{d}</svg>;
+const icons = {
+  dash: I(<><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>),
+  prop: I(<><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>),
+  wo: I(<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>),
+  cal: I(<><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>),
+  pay: I(<><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6"/></>),
+  users: I(<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>),
+  user: I(<><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></>),
+  report: I(<><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></>),
+  fin: I(<><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></>),
+  plus: I(<><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,14,2.5),
+  search: I(<><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,15),
+  bell: I(<><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></>),
+  logout: I(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>),
+  chev: I(<polyline points="9 18 15 12 9 6"/>,16),
+  star: I(<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>),
+  acct: I(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>),
+  mail: I(<><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></>),
+  doc: I(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>),
+  x: I(<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,14,2),
+};
+
+/* ═══════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════ */
+const Badge = ({c,children}) => <span className={`badge ${c}`}>{children}</span>;
+
+/* ═══════════════════════════════════════════
+   SHARED COMPONENTS
+   ═══════════════════════════════════════════ */
+function Toast({msg,onDone}) { useEffect(()=>{const t=setTimeout(onDone,2500);return()=>clearTimeout(t);},[onDone]); return <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:9999}}><div className="badge" style={{background:"var(--black)",color:"white",padding:"11px 22px",borderRadius:100,fontSize:13,fontWeight:500,border:"none",animation:"fadeUp .3s ease both"}}>{msg}</div></div>; }
+
+function Modal({title,sub,onClose,wide,children}) {
+  return <div style={{position:"fixed",inset:0,zIndex:500,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",animation:"fadeUp .15s ease"}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:24,boxShadow:"0 24px 80px rgba(0,0,0,.2)",width:"100%",maxWidth:wide?640:520,maxHeight:"90vh",overflow:"hidden",display:"flex",flexDirection:"column",animation:"fadeUp .25s ease both"}}>
+      <div style={{padding:"24px 28px 18px",borderBottom:"1px solid rgba(0,83,87,.08)",display:"flex",justifyContent:"space-between",flexShrink:0}}>
+        <div><div className="panel-title" dangerouslySetInnerHTML={{__html:title}}/>{sub&&<div style={{fontSize:12,color:"var(--text-muted)",marginTop:3}}>{sub}</div>}</div>
+        <button onClick={onClose} className="close-btn">{icons.x}</button>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:"24px 28px 28px"}}>{children}</div>
+    </div>
+  </div>;
+}
+
+function SlidePanel({title,sub,onClose,children}) {
+  return <>
+    <div style={{position:"fixed",inset:0,zIndex:300,background:"rgba(0,0,0,.45)",transition:"background .35s"}} onClick={onClose}/>
+    <div style={{position:"fixed",top:0,right:0,bottom:0,zIndex:400,width:420,maxWidth:"100vw",background:"white",boxShadow:"-8px 0 48px rgba(0,0,0,.2)",borderRadius:"24px 0 0 24px",overflow:"hidden",display:"flex",flexDirection:"column",animation:"slideIn .35s cubic-bezier(.32,0,.15,1) both"}}>
+      <div style={{padding:"22px 24px 18px",borderBottom:"1px solid rgba(0,83,87,.08)",display:"flex",justifyContent:"space-between",flexShrink:0}}>
+        <div><div className="panel-title" dangerouslySetInnerHTML={{__html:title}}/>{sub&&<div style={{fontSize:12,color:"var(--text-muted)",marginTop:3}}>{sub}</div>}</div>
+        <button onClick={onClose} className="close-btn">{icons.x}</button>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:0}}>{children}</div>
+    </div>
+  </>;
+}
+
+function EmptyState({icon,text,sub}) { return <div className="empty-state"><div className="empty-icon">{icon}</div><div className="empty-text">{text}</div>{sub&&<div style={{fontSize:13,color:"var(--text-muted)",marginTop:4}}>{sub}</div>}</div>; }
+
+function StatCard({label,value,color,icon,sub}) {
+  return <div className="stat-card"><div><div className="stat-label">{label}</div><div className="stat-value" style={{color:color||"var(--black)"}}>{value}</div>{sub&&<div style={{fontSize:12,color:"var(--text-muted)",marginTop:4}}>{sub}</div>}</div>{icon&&<div className="stat-icon" style={{background:color?color+"18":"var(--forest-mist)"}}><span style={{fontSize:20}}>{icon}</span></div>}</div>;
+}
+
+function Field({label,children,sub}) { return <div className="field"><label className="field-label">{label}</label>{sub&&<div className="field-sub">{sub}</div>}{children}</div>; }
+
+/* ═══════════════════════════════════════════
+   APP SHELL — Topbar + Sidenav + Role Bar
+   ═══════════════════════════════════════════ */
+function AppShell({page,children}) {
+  const {user,activeRole,setActiveRole,navigate,data,logout} = useApp();
+  const [searchQ, setSearchQ] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  if(!user) return null;
+  const initials = user.name.split(" ").map(w=>w[0]).join("").toUpperCase();
+  const openWOs = data.workOrders.filter(w=>w.stage<9).length;
+  const propCount = data.properties.filter(p=> activeRole==="owner"?p.owner_id===user.id : activeRole==="tenant"?data.users.find(u=>u.id===user.id)?.property_id===p.id : p.manager_id===user.id).length;
+
+  // Search logic
+  const sq = searchQ.toLowerCase().trim();
+  const searchResults = sq.length>=2 ? {
+    properties: data.properties.filter(p=>(p.address+p.city+p.type).toLowerCase().includes(sq)).slice(0,4),
+    workOrders: data.workOrders.filter(w=>(w.title+(w.wo_number||'')+w.category).toLowerCase().includes(sq)).slice(0,4),
+    people: data.users.filter(u=>(u.name+u.email+(u.trade||'')).toLowerCase().includes(sq)).slice(0,4),
+  } : null;
+  const hasResults = searchResults && (searchResults.properties.length||searchResults.workOrders.length||searchResults.people.length);
+
+  // Notifications
+  const notifications = [
+    ...data.workOrders.filter(w=>w.priority==="urgent"&&w.stage<9).map(w=>({id:w.id,icon:"🔴",text:`Urgent: ${w.title}`,sub:w.wo_number||"Work Order",page:"workorders"})),
+    ...data.payments.filter(p=>p.status==="overdue").map(p=>({id:p.id,icon:"⚠️",text:`Overdue payment: $${p.amount}`,sub:data.properties.find(pr=>pr.id===p.property_id)?.address||"Payment",page:"payments"})),
+    ...data.workOrders.filter(w=>!w.contractor_id&&w.stage<9).slice(0,3).map(w=>({id:w.id,icon:"👷",text:`Unassigned: ${w.title}`,sub:"Needs contractor",page:"workorders"})),
+  ].slice(0,8);
+
+  const NAV = {
+    manager:[
+      {g:"Overview",items:[{i:icons.dash,l:"Dashboard",p:"dashboard"},{i:icons.prop,l:"Properties",p:"properties",c:data.properties.filter(p=>p.manager_id===user.id).length},{i:icons.wo,l:"Work Orders",p:"workorders",c:openWOs,u:true},{i:icons.cal,l:"Calendar",p:"calendar"}]},
+      {g:"Operations",items:[{i:icons.users,l:"Contractors",p:"contractors"},{i:icons.user,l:"Tenants",p:"tenants"}]},
+      {g:"Insights",items:[{i:icons.report,l:"Reports",p:"reports"},{i:icons.pay,l:"Financials",p:"financials"}]},
+    ],
+    owner:[
+      {g:"Overview",items:[{i:icons.dash,l:"Dashboard",p:"dashboard"},{i:icons.prop,l:"My Properties",p:"properties",c:data.properties.filter(p=>p.owner_id===user.id).length},{i:icons.wo,l:"Work Orders",p:"workorders"},{i:icons.cal,l:"Calendar",p:"calendar"}]},
+      {g:"Management",items:[{i:icons.users,l:"Contractors",p:"contractors"},{i:icons.user,l:"Tenants",p:"tenants"},{i:icons.report,l:"Reports",p:"reports"},{i:icons.pay,l:"Financials",p:"financials"}]},
+    ],
+    contractor:[
+      {g:"Work",items:[{i:icons.dash,l:"Dashboard",p:"dashboard"},{i:icons.wo,l:"Available Jobs",p:"workorders",c:data.workOrders.filter(w=>(!w.contractor_id||w.contractor_id===user.id)&&w.stage<9).length},{i:icons.cal,l:"Calendar",p:"calendar"}]},
+      {g:"Business",items:[{i:icons.report,l:"My Reviews",p:"reports"}]},
+    ],
+    tenant:[
+      {g:"My Home",items:[{i:icons.dash,l:"Dashboard",p:"dashboard"},{i:icons.wo,l:"My Requests",p:"workorders",c:data.workOrders.filter(w=>w.submitted_by===user.id&&w.stage<9).length,u:true},{i:icons.cal,l:"Calendar",p:"calendar"}]},
+      {g:"Info",items:[{i:icons.pay,l:"Payments",p:"payments"},{i:icons.doc,l:"Documents",p:"documents"}]},
+    ],
+  };
+  const navGroups = NAV[activeRole] || NAV.manager;
+  const roleLabels = {manager:"Property Manager",owner:"Property Owner",contractor:"Contractor",tenant:"Tenant"};
+  const roleIcons = {manager:"🏢",owner:"🏠",contractor:"🔧",tenant:"🔑"};
+  const hour = new Date().getHours();
+  const greet = hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
+
+  return <>
+    {/* TOPBAR */}
+    <header className="topbar">
+      <div className="topbar-logo" onClick={()=>navigate("dashboard")}><span className="logo-text">TropicTask</span></div>
+      <div className="topbar-center"><div className="topbar-search-wrap" style={{position:"relative"}}><span className="ts-icon">{icons.search}</span><input placeholder="Search properties, work orders, contractors…" value={searchQ} onChange={e=>{setSearchQ(e.target.value);setSearchOpen(true);setNotifOpen(false);}} onFocus={()=>{if(sq.length>=2)setSearchOpen(true);}} onBlur={()=>setTimeout(()=>setSearchOpen(false),200)}/>
+        {searchOpen&&searchResults&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:6,background:"white",borderRadius:16,boxShadow:"0 12px 48px rgba(0,0,0,.18)",border:"1px solid rgba(0,83,87,.1)",maxHeight:360,overflowY:"auto",zIndex:999,animation:"fadeUp .2s ease both"}}>
+          {!hasResults&&<div style={{padding:"20px 16px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No results for "{searchQ}"</div>}
+          {searchResults.properties.length>0&&<><div style={{padding:"10px 16px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",color:"var(--text-muted)"}}>Properties</div>{searchResults.properties.map(p=><div key={p.id} className="list-row" style={{padding:"10px 16px"}} onMouseDown={()=>{setSearchQ("");setSearchOpen(false);navigate("properties");}}><span style={{fontSize:16}}>🏠</span><div><div className="row-title" style={{fontSize:13}}>{p.address}</div><div className="row-sub">{p.city}, {p.state}</div></div></div>)}</>}
+          {searchResults.workOrders.length>0&&<><div style={{padding:"10px 16px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",color:"var(--text-muted)"}}>Work Orders</div>{searchResults.workOrders.map(w=><div key={w.id} className="list-row" style={{padding:"10px 16px"}} onMouseDown={()=>{setSearchQ("");setSearchOpen(false);navigate("workorders");}}><span style={{fontSize:16}}>🔧</span><div><div className="row-title" style={{fontSize:13}}>{w.title}</div><div className="row-sub">{w.wo_number} · {w.category}</div></div></div>)}</>}
+          {searchResults.people.length>0&&<><div style={{padding:"10px 16px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",color:"var(--text-muted)"}}>People</div>{searchResults.people.map(u=><div key={u.id} className="list-row" style={{padding:"10px 16px"}} onMouseDown={()=>{setSearchQ("");setSearchOpen(false);navigate(u.roles?.includes("contractor")?"contractors":"tenants");}}><span style={{fontSize:16}}>👤</span><div><div className="row-title" style={{fontSize:13}}>{u.name}</div><div className="row-sub">{u.email}</div></div></div>)}</>}
+        </div>}
+      </div></div>
+      <div className="topbar-right">
+        <div className="topbar-notif" style={{position:"relative"}} onClick={()=>{setNotifOpen(!notifOpen);setSearchOpen(false);}}>{icons.bell}{notifications.length>0&&<div className="notif-dot"/>}
+          {notifOpen&&<div style={{position:"absolute",top:"100%",right:0,marginTop:8,width:320,background:"white",borderRadius:16,boxShadow:"0 12px 48px rgba(0,0,0,.18)",border:"1px solid rgba(0,83,87,.1)",maxHeight:380,overflowY:"auto",zIndex:999,animation:"fadeUp .2s ease both"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"14px 16px 10px",borderBottom:"1px solid rgba(0,83,87,.08)",fontFamily:"var(--font-display)",fontWeight:700,fontSize:15,color:"var(--black)"}}>Notifications</div>
+            {notifications.length===0&&<div style={{padding:"24px 16px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>All caught up!</div>}
+            {notifications.map(n=><div key={n.id+n.text} className="list-row" style={{padding:"10px 16px",cursor:"pointer"}} onClick={()=>{setNotifOpen(false);navigate(n.page);}}><span style={{fontSize:16}}>{n.icon}</span><div style={{flex:1}}><div className="row-title" style={{fontSize:12}}>{n.text}</div><div className="row-sub">{n.sub}</div></div></div>)}
+          </div>}
+        </div>
+        <div className="topbar-user" onClick={()=>navigate("account")}><div className="topbar-avatar">{initials}</div><span className="topbar-uname">{user.name}</span></div>
+      </div>
+    </header>
+
+    {/* ROLE BAR */}
+    <div className="role-bar">
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        {user.roles.map(r=>(
+          <div key={r} className={`role-tab${activeRole===r?" active":""}`} onClick={()=>setActiveRole(r)}>{roleIcons[r]} {roleLabels[r]}</div>
+        ))}
+      </div>
+      <div className="role-bar-greet">{greet}, <em>{user.name.split(" ")[0]}</em></div>
+    </div>
+
+    {/* SIDENAV */}
+    <nav className="sidenav">
+      <div className="nav-role-hdr"><div className="nav-role-lbl">{roleLabels[activeRole]}</div><div className="nav-role-sub">{activeRole==="manager"?user.company_name||user.name:activeRole==="contractor"?user.company_name||user.trade||user.name:activeRole==="tenant"?data.properties.find(p=>p.id===user.property_id)?.address||"My Home":user.name}</div></div>
+      {navGroups.map(g=><div key={g.g}>
+        <div className="nav-grp-lbl">{g.g}</div>
+        {g.items.map(item=><div key={item.p} className={`nav-item${page===item.p?" active":""}`} onClick={()=>navigate(item.p)}>
+          <span className="nav-icon">{item.i}</span>{item.l}
+          {item.c>0&&<span className={`nav-count${item.u?" urgent":""}`}>{item.c}</span>}
+        </div>)}
+      </div>)}
+      {(activeRole==="manager")&&<><div className="nav-divider"/><div className="nav-grp-lbl">Invites</div>
+        <div className="nav-item" onClick={()=>navigate("invite",{type:"tenant"})}><span className="nav-icon">{icons.mail}</span>Invite Tenant</div>
+        <div className="nav-item" onClick={()=>navigate("invite",{type:"owner"})}><span className="nav-icon">{icons.mail}</span>Invite Owner</div>
+        <div className="nav-item" onClick={()=>navigate("invite",{type:"contractor"})}><span className="nav-icon">{icons.mail}</span>Invite Contractor</div>
+      </>}
+      <div className="nav-divider"/>
+      <div className="nav-bottom">
+        <div className="nav-item" onClick={()=>navigate("account")}><span className="nav-icon">{icons.acct}</span>Account</div>
+        <div className="nav-item" style={{color:"var(--error)"}} onClick={logout}><span className="nav-icon">{icons.logout}</span>Sign out</div>
+      </div>
+    </nav>
+
+    {/* MAIN */}
+    <div className="app-layout"><main className="app-main" key={page}>{children}</main></div>
+  </>;
+}
+
+/* ═══════════════════════════════════════════
+   SIGN IN
+   ═══════════════════════════════════════════ */
+function SignIn() {
+  const {data,setData,setUser,setActiveRole,navigate}=useApp();
+  const [email,setEmail]=useState(""); const [pw,setPw]=useState(""); const [err,setErr]=useState(""); const [loading,setLoad]=useState(false); const [showPw,setShowPw]=useState(false);
+  const submit=async()=>{
+    setErr("");
+    if(!email||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setErr("Please enter a valid email.");
+    if(!pw) return setErr("Please enter your password.");
+    setLoad(true);
+
+    if(isSupabaseConfigured()) {
+      try {
+        const { data: authData, error } = await supabaseSignIn(email,pw);
+        if(!error && authData?.user) {
+          const profile = await fetchProfile(authData.user.id);
+          if(profile) {
+            setUser(profile); setActiveRole(profile.roles?.[0] || 'manager');
+            const [users, properties, workOrders, payments, components, reviews] = await Promise.all([
+              fetchProfiles(), fetchAllUserProperties(authData.user.id), fetchWorkOrders(), fetchPayments(), fetchComponents(), fetchReviews(),
+            ]);
+            setData({ users: users.length ? users : [], properties: properties.length ? properties : [], workOrders: workOrders.length ? workOrders : [], payments: payments.length ? payments : [], components: components.length ? components : [], reviews: reviews.length ? reviews : [], invites: [], _nextId: data._nextId || SEED._nextId });
+            navigate("dashboard"); setLoad(false);
+            return;
+          }
+        }
+      } catch {}
+      // Supabase auth failed — fall through to local demo login
+    }
+
+    setTimeout(()=>{
+      const u=SEED.users.find(x=>x.email===email&&x.password===pw) || data.users.find(x=>x.email===email&&x.password===pw);
+      if(!u){setErr("Invalid email or password.");setLoad(false);return;}
+      // Ensure we load seed data for demo users
+      if(!data.properties.length) setData(SEED);
+      setUser(u); setActiveRole(u.roles[0]); navigate("dashboard"); setLoad(false);
+    },600);
+  };
+  return <div className="auth-page">
+    <div className="auth-bg"><div className="bg-dots"/><div className="bg-arch arch-1"/><div className="bg-arch arch-2"/></div>
+    <nav className="auth-nav"><span className="logo-link" onClick={()=>navigate("landing")}>TropicTask</span><div className="auth-nav-r">Don't have an account? <a onClick={()=>navigate("signup")}>Sign up free</a></div></nav>
+    <main className="auth-main"><div className="auth-card"><div className="auth-card-body fade-up">
+      <h1 className="auth-title">Welcome <em>back</em></h1>
+      <p className="auth-sub">Sign in to your TropicTask account.</p>
+      {err&&<div className="alert alert-error">⚠️ {err}</div>}
+      <Field label="Email address"><div className="input-wrap"><span className="input-icon">✉️</span><input className="fi" type="email" placeholder="jane@smithpm.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/></div></Field>
+      <Field label="Password"><div className="input-wrap"><span className="input-icon">🔒</span><input className="fi" type={showPw?"text":"password"} placeholder="Enter your password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/><button className="pw-tog" onClick={()=>setShowPw(!showPw)}>{showPw?"🙈":"👁"}</button></div></Field>
+      <button className="btn-primary" onClick={submit} disabled={loading}>{loading?"Signing in…":"Sign in"}</button>
+      <div className="divider"><div className="divider-line"/><div className="divider-text">demo accounts · password: pass123</div><div className="divider-line"/></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {[{r:"Manager",e:"jane@smithpm.com"},{r:"Owner",e:"robert@email.com"},{r:"Contractor",e:"mike@plumbing.com"},{r:"Tenant",e:"sarah@email.com"}].map(d=>(
+          <button key={d.e} className="demo-btn" onClick={()=>{setEmail(d.e);setPw("pass123");}}>{d.r}</button>
+        ))}
+      </div>
+      <div className="auth-prompt">Don't have an account? <a onClick={()=>navigate("signup")}>Create one free</a></div>
+    </div></div></main>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   SIGN UP
+   ═══════════════════════════════════════════ */
+function SignUp() {
+  const {data,setData,setUser,setActiveRole,navigate}=useApp();
+  const [step,setStep]=useState(1);
+  const [f,setF]=useState({name:"",email:"",phone:"",password:"",confirm:"",roles:[]});
+  const [errs,setErrs]=useState({});
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const toggleRole=r=>setF(p=>({...p,roles:p.roles.includes(r)?p.roles.filter(x=>x!==r):[...p.roles,r]}));
+
+  const step1=()=>{
+    const e={};
+    if(!f.name.trim()) e.name=1; if(!f.email||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) e.email=1;
+    if(f.password.length<6) e.password=1; if(f.password!==f.confirm) e.confirm=1;
+    if(data.users.find(u=>u.email===f.email)) e.taken=1;
+    setErrs(e); if(Object.keys(e).length) return;
+    setStep(2);
+  };
+  const step2=async()=>{
+    if(!f.roles.length){setErrs({roles:1});return;}
+
+    if (isSupabaseConfigured()) {
+      const { data: authData, error } = await supabaseSignUp(f.email, f.password, {
+        name: f.name,
+        role: f.roles[0],
+      });
+      if (error) {
+        setErrs({submit: error.message || 'Signup error'});
+        return;
+      }
+
+      if (!authData?.user) {
+        setErrs({submit: 'Signup succeeded but no user returned. Check if email confirmation is disabled.'});
+        return;
+      }
+
+      // Small delay to let the trigger create the profile
+      await new Promise(r => setTimeout(r, 500));
+      const profile = await fetchProfile(authData.user.id);
+      if (profile) {
+        setUser(profile);
+        setActiveRole(profile.roles?.[0] || 'manager');
+        // Fetch all data with new session
+        const [users, properties, workOrders, payments, components, reviews] = await Promise.all([
+          fetchProfiles(), fetchAllUserProperties(authData.user.id), fetchWorkOrders(), fetchPayments(), fetchComponents(), fetchReviews(),
+        ]);
+        setData({ users: users.length ? users : [profile], properties, workOrders, payments, components, reviews, invites: [], _nextId: data._nextId || SEED._nextId });
+        setStep(3); return;
+      }
+
+      // Fallback — profile trigger may not have fired yet, use local state
+      const newUser={id:authData.user.id,email:f.email,name:f.name,phone:f.phone,roles:f.roles,company_name:null,license_number:null,trade:null,manager_id:null,property_id:null,stripe_customer_id:null};
+      setData({...data,users:[...data.users,newUser],_nextId:{...data._nextId,u:data._nextId.u+1}});
+      setUser(newUser); setActiveRole(f.roles[0]); setStep(3);
+      return;
+    }
+
+    const id="u"+data._nextId.u;
+    const newUser={id,email:f.email,password:f.password,name:f.name,phone:f.phone,roles:f.roles,company_name:null,license_number:null,trade:null,manager_id:null,property_id:null,stripe_customer_id:null};
+    setData({...data,users:[...data.users,newUser],_nextId:{...data._nextId,u:data._nextId.u+1}});
+    setUser(newUser); setActiveRole(f.roles[0]); setStep(3);
+  };
+
+  const ROLES=[{k:"manager",i:"🏢",n:"Property Manager",d:"I manage properties on behalf of owners"},{k:"owner",i:"🏠",n:"Property Owner",d:"I own property I manage or oversee"},{k:"contractor",i:"🔧",n:"Contractor",d:"I do maintenance and repair work"},{k:"tenant",i:"🔑",n:"Tenant",d:"I rent a property managed on TropicTask"}];
+
+  return <div className="auth-page">
+    <div className="auth-bg"><div className="bg-dots"/><div className="bg-arch arch-1"/><div className="bg-arch arch-2"/></div>
+    <nav className="auth-nav"><span className="logo-link" onClick={()=>navigate("landing")}>TropicTask</span><div className="auth-nav-r">Already have an account? <a onClick={()=>navigate("signin")}>Sign in</a></div></nav>
+    <main className="auth-main"><div className="auth-card" style={{maxWidth:480}}><div className="auth-card-body fade-up">
+      {/* Step indicator */}
+      <div className="step-bar">{[1,2,3].map(s=><React.Fragment key={s}>
+        <div className="step-item"><div className={`step-num${step>s?" done":step===s?" active":""}`}>{step>s?"✓":s}</div><span className={`step-lbl${step>=s?" active":""}`}>{["Create account","Your profile","You're in"][s-1]}</span></div>
+        {s<3&&<div className="step-line"><div className="step-fill" style={{width:step>s?"100%":"0%"}}/></div>}
+      </React.Fragment>)}</div>
+
+      {step===1&&<div className="fade-up">
+        <h1 className="auth-title" style={{textAlign:"left"}}>Welcome to <em>TropicTask</em></h1>
+        <p className="auth-sub" style={{textAlign:"left"}}>Create your free account. No credit card required.</p>
+        <Field label="Full name"><input className={`fi no-icon${errs.name?" err":""}`} value={f.name} onChange={e=>set("name",e.target.value)} placeholder="Jane Smith"/></Field>
+        <Field label="Email"><input className={`fi no-icon${errs.email||errs.taken?" err":""}`} type="email" value={f.email} onChange={e=>set("email",e.target.value)} placeholder="jane@example.com"/>{errs.taken&&<div className="f-err">Email already in use.</div>}</Field>
+        <Field label="Phone (optional)"><input className="fi no-icon" value={f.phone} onChange={e=>set("phone",e.target.value)} placeholder="(555) 000-0000"/></Field>
+        <Field label="Password"><input className={`fi no-icon${errs.password?" err":""}`} type="password" value={f.password} onChange={e=>set("password",e.target.value)} placeholder="At least 6 characters"/>{errs.password&&<div className="f-err">Min 6 characters.</div>}</Field>
+        <Field label="Confirm password"><input className={`fi no-icon${errs.confirm?" err":""}`} type="password" value={f.confirm} onChange={e=>set("confirm",e.target.value)} placeholder="Re-enter password"/>{errs.confirm&&<div className="f-err">Passwords don't match.</div>}</Field>
+        <button className="btn-primary" onClick={step1}>Create my account</button>
+        <div className="auth-prompt">Already have an account? <a onClick={()=>navigate("signin")}>Sign in</a></div>
+      </div>}
+
+      {step===2&&<div className="fade-up">
+        <h1 className="auth-title" style={{textAlign:"left"}}>Almost <em>there!</em></h1>
+        <p className="auth-sub" style={{textAlign:"left"}}>Select your role(s). You can hold multiple roles.</p>
+        <div className="role-grid">{ROLES.map(r=><div key={r.k} className={`role-card${f.roles.includes(r.k)?" selected":""}`} onClick={()=>{toggleRole(r.k);setErrs({});}}><div className="role-icon-lg">{r.i}</div><div className="role-name">{r.n}</div><div className="role-desc">{r.d}</div>{f.roles.includes(r.k)&&<div className="role-check">✓</div>}</div>)}</div>
+        {errs.roles&&<div className="f-err" style={{marginBottom:16}}>Select at least one role.</div>}
+        {errs.submit&&<div className="alert alert-error" style={{marginBottom:16}}>⚠️ {errs.submit}</div>}
+        <button className="btn-primary" onClick={step2}>Set up my dashboard →</button>
+      </div>}
+
+      {step===3&&<div className="fade-up" style={{textAlign:"center"}}>
+        <div className="success-icon">🌴</div>
+        <h1 className="auth-title">You're <em>all set!</em></h1>
+        <p className="auth-sub">Your TropicTask account is ready.</p>
+        <button className="btn-primary" onClick={()=>navigate("dashboard")}>Go to my dashboard →</button>
+      </div>}
+    </div></div></main>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   DASHBOARD
+   ═══════════════════════════════════════════ */
+function Dashboard() {
+  const {user,activeRole,data,navigate,toast}=useApp();
+  const U=id=>data.users.find(u=>u.id===id);
+  const P=id=>data.properties.find(p=>p.id===id);
+  const myProps=activeRole==="owner"?data.properties.filter(p=>p.owner_id===user.id):activeRole==="tenant"?data.properties.filter(p=>p.id===user.property_id):data.properties.filter(p=>p.manager_id===user.id);
+  const myWOs=activeRole==="contractor"?data.workOrders.filter(w=>w.contractor_id===user.id||(!w.contractor_id&&w.stage<=2)):activeRole==="tenant"?data.workOrders.filter(w=>w.submitted_by===user.id):data.workOrders;
+  const openWOs=myWOs.filter(w=>w.stage<9);
+  const pendingPay=data.payments.filter(p=>p.status!=="paid"&&p.status!=="cancelled");
+  const occupied=myProps.filter(p=>p.status==="occupied").length;
+
+  return <AppShell page="dashboard">
+    <div className="page-header"><div><div className="page-title">Your <em>{activeRole==="contractor"?"Jobs":activeRole==="tenant"?"Home":"Properties"}</em></div><div className="page-sub">{activeRole==="manager"?"Overview of managed properties and open work orders":activeRole==="owner"?"A snapshot of your portfolio":activeRole==="contractor"?"Available work orders and your schedule":"Manage maintenance requests"}</div></div></div>
+
+    {/* Quick Actions */}
+    <div className="quick-actions">
+      {activeRole!=="contractor"&&<button className="qa-btn primary" onClick={()=>navigate("workorders",{modal:"new"})}>{icons.plus} {activeRole==="tenant"?"Submit Request":"New Work Order"}</button>}
+      {activeRole==="manager"&&<><button className="qa-btn" onClick={()=>navigate("payments")}>{icons.pay} Coordinate Payments</button><button className="qa-btn" onClick={()=>navigate("invite",{type:"tenant"})}>{icons.mail} Invite Tenant</button><button className="qa-btn" onClick={()=>navigate("properties",{modal:"add"})}>{icons.prop} Add Property</button></>}
+      {activeRole==="contractor"&&<button className="qa-btn primary" onClick={()=>navigate("workorders")}>{icons.search} View Available Jobs</button>}
+    </div>
+
+    {/* Stats */}
+    <div className="stats-row">
+      <StatCard label="Properties" value={myProps.length} icon="🏠"/>
+      <StatCard label="Open Work Orders" value={openWOs.length} color={openWOs.length?"var(--warning)":undefined} icon="🔧"/>
+      {activeRole!=="contractor"&&<StatCard label={activeRole==="tenant"?"Next Payment":"Pending Payments"} value={activeRole==="tenant"?`$${pendingPay.find(p=>p.recipient_id===user.id)?.amount||0}`:pendingPay.length} color={pendingPay.length?"var(--error)":undefined} icon="💰"/>}
+      {activeRole==="contractor"&&<StatCard label="Rating" value="4.9" color="var(--warning)" icon="⭐" sub={`${data.reviews.filter(r=>r.contractor_id===user.id).length} reviews`}/>}
+      {(activeRole==="manager"||activeRole==="owner")&&<StatCard label="Occupancy" value={myProps.length?Math.round(occupied/myProps.length*100)+"%":"—"} color="var(--success)" icon="📊"/>}
+    </div>
+
+    {/* ═══ WORK ORDER PIPELINE ═══ */}
+    {activeRole!=="tenant"&&<div className="panel" style={{marginBottom:24}}>
+      <div className="panel-header"><div className="panel-title">Work Order <em>Pipeline</em></div><span className="panel-action" onClick={()=>navigate("workorders")}>View all →</span></div>
+      <div style={{padding:"20px 24px 24px"}}>
+        {/* Pipeline stages */}
+        <div className="pipeline-grid">
+          {STAGES.filter(s=>s.n<=9).map(s=>{
+            const count=myWOs.filter(w=>w.stage===s.n).length;
+            const maxCount=Math.max(...STAGES.map(st=>myWOs.filter(w=>w.stage===st.n).length),1);
+            const pct=Math.max(count/maxCount*100,count?8:0);
+            return <div key={s.n} className="pipeline-col">
+              <div className="pipeline-bar-wrap">
+                <div className="pipeline-bar" style={{height:`${pct}%`,background:s.color,opacity:count?1:.15}}/>
+              </div>
+              <div className="pipeline-count" style={{color:count?s.color:"var(--sand-dark)"}}>{count}</div>
+              <div className="pipeline-label">{s.label}</div>
+              <div className="pipeline-who">{s.who}</div>
+            </div>;
+          })}
+        </div>
+        {/* Pipeline summary row */}
+        <div style={{display:"flex",gap:16,marginTop:20,paddingTop:16,borderTop:"1px solid rgba(0,83,87,.08)",flexWrap:"wrap"}}>
+          {[
+            {label:"Urgent",count:myWOs.filter(w=>w.priority==="urgent"&&w.stage<9).length,color:"var(--error)"},
+            {label:"Unassigned",count:myWOs.filter(w=>!w.contractor_id&&w.stage<9).length,color:"var(--warning)"},
+            {label:"In Progress",count:myWOs.filter(w=>w.stage>=5&&w.stage<=6).length,color:"var(--forest)"},
+            {label:"Completed",count:myWOs.filter(w=>w.stage>=7).length,color:"var(--success)"},
+          ].map(s=><div key={s.label} style={{display:"flex",alignItems:"center",gap:8,fontSize:13}}>
+            <div style={{width:10,height:10,borderRadius:"50%",background:s.color,opacity:s.count?.9:.2}}/>
+            <span style={{color:"var(--text-muted)"}}>{s.label}</span>
+            <strong style={{color:s.count?s.color:"var(--sand-dark)"}}>{s.count}</strong>
+          </div>)}
+        </div>
+      </div>
+    </div>}
+
+    <div className="content-grid">
+      <div>
+        {/* Properties panel */}
+        <div className="panel"><div className="panel-header"><div className="panel-title">{activeRole==="tenant"?"My ":""}<em>Properties</em></div><span className="panel-action" onClick={()=>navigate("properties")}>View all →</span></div>
+          {myProps.slice(0,4).map(p=><div key={p.id} className="list-row" onClick={()=>navigate("properties",{detail:p.id})}>
+            <div className="prop-thumb" style={{background:"var(--forest-mist)"}}>{p.emoji||"🏠"}</div>
+            <div style={{flex:1,minWidth:0}}><div className="row-title">{p.address}</div><div className="row-sub">{p.beds} bed · {p.baths} bath · {p.city}, {p.state}</div></div>
+            <div style={{textAlign:"center",minWidth:45}}><div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700,color:data.workOrders.filter(w=>w.property_id===p.id&&w.stage<9).length?"var(--warning)":"var(--sand-dark)"}}>{data.workOrders.filter(w=>w.property_id===p.id&&w.stage<9).length}</div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:".05em",color:"var(--text-muted)"}}>WOs</div></div>
+            <Badge c={p.status==="occupied"?"b-green":"b-grey"}>{p.status==="occupied"?"Occupied":"Vacant"}</Badge>
+          </div>)}
+          {!myProps.length&&<EmptyState icon="🏠" text="No properties yet" sub="Add your first property to get started"/>}
+        </div>
+
+        {/* Recent Work Orders */}
+        <div className="panel"><div className="panel-header"><div className="panel-title">Recent <em>Work Orders</em></div><span className="panel-action" onClick={()=>navigate("workorders")}>View all →</span></div>
+          {openWOs.slice(0,5).map(wo=>{const p=P(wo.property_id); const st=getStage(wo.stage); return <div key={wo.id} className="list-row" onClick={()=>navigate("workorders",{detail:wo.id})}>
+            <div className={`pri-bar pri-${wo.priority}`}/>
+            <div style={{flex:1,minWidth:0}}><div className="row-title">{wo.title}</div><div className="row-sub">{p?.address} · {wo.contractor_id?U(wo.contractor_id)?.name:"Unassigned"}</div></div>
+            <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}><Badge c={priBadge(wo.priority)}>{priLabel(wo.priority)}</Badge><Badge c={stageBadge(wo.stage)}>{st.label}</Badge></div>
+          </div>;})}
+          {!openWOs.length&&<EmptyState icon="🔧" text="No open work orders"/>}
+        </div>
+      </div>
+
+      <div>
+        {/* Payments */}
+        <div className="panel"><div className="panel-header"><div className="panel-title"><em>Payments</em></div><span className="panel-action" onClick={()=>navigate("payments")}>View all →</span></div>
+          {data.payments.slice(0,5).map(pay=><div key={pay.id} className="list-row" onClick={()=>navigate("payments")}>
+            <div style={{width:38,height:38,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,background:pay.status==="paid"?"var(--success-bg)":pay.status==="overdue"?"var(--error-bg)":"var(--warning-bg)"}}>{pay.type==="rent"?"🏠":"🔧"}</div>
+            <div style={{flex:1,minWidth:0}}><div className="row-title">{pay.title||pay.note||'Payment'}</div><div className="row-sub">{P(pay.property_id)?.address}</div></div>
+            <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--font-display)",fontSize:16,fontWeight:700}}>${pay.amount}</div><Badge c={pay.status==="paid"?"b-green":pay.status==="overdue"?"b-red":"b-amber"}>{pay.status}</Badge></div>
+          </div>)}
+        </div>
+
+        {/* Activity Feed */}
+        {activeRole!=="tenant"&&<div className="panel"><div className="panel-header"><div className="panel-title"><em>Activity</em></div></div>
+          {openWOs.slice(0,4).map(wo=>{const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{gap:10}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:st.color,flexShrink:0,marginTop:5}}/>
+            <div style={{flex:1,fontSize:13,color:"var(--text-body)",lineHeight:1.55}}><strong>{wo.wo_number}</strong> — {wo.title} → <span style={{color:st.color}}>{st.label}</span></div>
+            <span style={{fontSize:11,color:"var(--text-muted)",flexShrink:0}}>{daysAgo(wo.created_at)}</span>
+          </div>;})}
+        </div>}
+      </div>
+    </div>
+  </AppShell>;
+}
+
+/* ═══════════════════════════════════════════
+   PROPERTIES PAGE
+   ═══════════════════════════════════════════ */
+function PropertiesPage() {
+  const {user,activeRole,data,navigate,toast,createProperty,updateProperty,deleteProperty}=useApp();
+  const [search,setSearch]=useState(""); const [filter,setFilter]=useState("all"); const [showAdd,setShowAdd]=useState(false); const [detail,setDetail]=useState(null);
+  const [showEdit,setShowEdit]=useState(null); const [confirmDelete,setConfirmDelete]=useState(null);
+  const [af,setAf]=useState({address:"",city:"",state:"MS",zip:"",beds:3,baths:2,type:"SFR",owner_id:"",monthly_rent:"",notes:""});
+  const [ef,setEf]=useState({address:"",city:"",state:"",zip:"",beds:0,baths:0,type:"",owner_id:"",monthly_rent:0,notes:"",status:""});
+  const props=useMemo(()=>{
+    let list=activeRole==="owner"?data.properties.filter(p=>p.owner_id===user.id):activeRole==="tenant"?data.properties.filter(p=>p.id===user.property_id):data.properties.filter(p=>p.manager_id===user.id);
+    if(filter!=="all") list=list.filter(p=>p.status===filter);
+    if(search) list=list.filter(p=>p.address.toLowerCase().includes(search.toLowerCase())||p.city.toLowerCase().includes(search.toLowerCase()));
+    return list;
+  },[data,activeRole,user,filter,search]);
+
+  const addProp=async ()=>{
+    if(!af.address.trim()||!af.city.trim()) return;
+    const candidate={address:af.address,city:af.city,state:af.state,zip:af.zip,type:af.type,beds:+af.beds,baths:+af.baths,sqft:0,year_built:0,monthly_rent:+af.monthly_rent||0,status:"vacant",manager_id:user.id,owner_id:af.owner_id||null,notes:af.notes};
+    await createProperty(candidate);
+    setShowAdd(false); setAf({address:"",city:"",state:"MS",zip:"",beds:3,baths:2,type:"SFR",owner_id:"",monthly_rent:"",notes:""});
+  };
+  const openEdit=(p)=>{setEf({address:p.address,city:p.city,state:p.state,zip:p.zip||"",beds:p.beds,baths:p.baths,type:p.type,owner_id:p.owner_id||"",monthly_rent:p.monthly_rent||0,notes:p.notes||"",status:p.status});setShowEdit(p.id);setDetail(null);};
+  const saveEdit=async()=>{
+    if(!ef.address.trim()||!ef.city.trim()) return;
+    await updateProperty(showEdit,{address:ef.address,city:ef.city,state:ef.state,zip:ef.zip,type:ef.type,beds:+ef.beds,baths:+ef.baths,monthly_rent:+ef.monthly_rent||0,owner_id:ef.owner_id||null,notes:ef.notes,status:ef.status});
+    setShowEdit(null);
+  };
+  const doDelete=async(id)=>{
+    await deleteProperty(id);
+    setConfirmDelete(null); setDetail(null);
+  };
+  const owners=data.users.filter(u=>u.roles.includes("owner"));
+  const dp=detail?data.properties.find(p=>p.id===detail):null;
+
+  return <AppShell page="properties">
+    <div className="page-header"><div><div className="page-title">{activeRole==="owner"?"My ":""}<em>Properties</em></div><div className="page-sub">{props.length} propert{props.length===1?"y":"ies"}</div></div>
+      {activeRole!=="tenant"&&<button className="btn-sm primary" onClick={()=>setShowAdd(true)}>{icons.plus} Add Property</button>}
+    </div>
+    <div className="filter-bar">
+      {["all","occupied","vacant"].map(f=><div key={f} className={`ftab${filter===f?" active":""}`} onClick={()=>setFilter(f)}>{f==="all"?"All":f.charAt(0).toUpperCase()+f.slice(1)}</div>)}
+      <div style={{position:"relative",marginLeft:"auto"}}><span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",opacity:.4}}>{icons.search}</span><input className="filter-search" placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {props.map(p=>{const owner=data.users.find(u=>u.id===p.owner_id); const wos=data.workOrders.filter(w=>w.property_id===p.id&&w.stage<9).length;
+        return <div key={p.id} className="prop-row-card" onClick={()=>setDetail(p.id)}>
+          <div className="prc-thumb">{p.emoji||"🏠"}</div>
+          <div className={`prc-stripe ${p.status==="occupied"?"s-green":"s-grey"}`}/>
+          <div className="prc-body"><div className="prc-main"><div className="row-title">{p.address}</div><div className="row-sub">{p.city}, {p.state} {p.zip} · {p.beds}bd/{p.baths}ba</div>{owner&&<div className="prc-owner"><div className="prc-owner-av">{owner.name.split(" ").map(w=>w[0]).join("")}</div><span>{owner.name}</span></div>}</div></div>
+          <div className="prc-right"><div className="prc-wo"><div className="prc-wo-val" style={{color:wos?"var(--warning)":"var(--sand-dark)"}}>{wos}</div><div className="prc-wo-lbl">Open WOs</div></div><Badge c={p.status==="occupied"?"b-green":"b-grey"}>{p.status==="occupied"?"Occupied":"Vacant"}</Badge>{icons.chev}</div>
+        </div>;
+      })}
+      {!props.length&&<EmptyState icon="🏠" text="No properties found"/>}
+    </div>
+
+    {/* Add Property Modal */}
+    {showAdd&&<Modal title="Add <em>Property</em>" sub="Enter property details" onClose={()=>setShowAdd(false)}>
+      <Field label="Street Address"><input className="fi no-icon" value={af.address} onChange={e=>setAf({...af,address:e.target.value})} placeholder="142 Oak Street"/></Field>
+      <div className="form-row"><Field label="City"><input className="fi no-icon" value={af.city} onChange={e=>setAf({...af,city:e.target.value})} placeholder="Meridian"/></Field><div className="form-row"><Field label="State"><input className="fi no-icon" value={af.state} onChange={e=>setAf({...af,state:e.target.value})}/></Field><Field label="ZIP"><input className="fi no-icon" value={af.zip} onChange={e=>setAf({...af,zip:e.target.value})}/></Field></div></div>
+      <div className="form-row"><Field label="Beds"><input className="fi no-icon" type="number" value={af.beds} onChange={e=>setAf({...af,beds:e.target.value})}/></Field><Field label="Baths"><input className="fi no-icon" type="number" value={af.baths} onChange={e=>setAf({...af,baths:e.target.value})}/></Field><Field label="Monthly Rent"><input className="fi no-icon" type="number" value={af.monthly_rent} onChange={e=>setAf({...af,monthly_rent:e.target.value})} placeholder="1200"/></Field></div>
+      {owners.length>0&&<Field label="Property Owner"><select className="fi no-icon sel" value={af.owner_id} onChange={e=>setAf({...af,owner_id:e.target.value})}><option value="">Select owner…</option>{owners.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></Field>}
+      <Field label="Notes"><textarea className="fi no-icon ta" value={af.notes} onChange={e=>setAf({...af,notes:e.target.value})} placeholder="Gate codes, special instructions…"/></Field>
+      <button className="btn-primary" style={{marginTop:12}} onClick={addProp}>Add Property</button>
+    </Modal>}
+
+    {/* Property Detail Slide Panel */}
+    {dp&&<SlidePanel title={`<em>${dp.address}</em>`} sub={`${dp.city}, ${dp.state} ${dp.zip}`} onClose={()=>setDetail(null)}>
+      <div style={{padding:24}}>
+        <div className="detail-grid">
+          <div className="dg-row"><span>Type</span><strong>{dp.type}</strong></div>
+          <div className="dg-row"><span>Beds / Baths</span><strong>{dp.beds} / {dp.baths}</strong></div>
+          <div className="dg-row"><span>Monthly Rent</span><strong>${dp.monthly_rent?.toLocaleString()}</strong></div>
+          <div className="dg-row"><span>Status</span><Badge c={dp.status==="occupied"?"b-green":"b-grey"}>{dp.status}</Badge></div>
+          <div className="dg-row"><span>Owner</span><strong>{data.users.find(u=>u.id===dp.owner_id)?.name||"—"}</strong></div>
+          {dp.notes&&<div className="dg-row"><span>Notes</span><strong>{dp.notes}</strong></div>}
+        </div>
+        <div style={{marginTop:20}}><div className="sec-label">Components</div>
+          {data.components.filter(c=>c.property_id===dp.id).map(c=><div key={c.id} className="comp-row"><span style={{fontSize:20}}>{c.icon}</span><div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{c.name}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>Installed: {c.installed} · Warranty: <span style={{color:c.warranty_status==="ok"?"var(--success)":c.warranty_status==="soon"?"var(--warning)":"var(--error)"}}>{c.warranty_expiry}</span></div></div></div>)}
+          {!data.components.filter(c=>c.property_id===dp.id).length&&<div style={{fontSize:13,color:"var(--text-muted)",padding:"12px 0"}}>No components tracked yet.</div>}
+        </div>
+        <div style={{marginTop:20}}><div className="sec-label">Work Orders</div>
+          {data.workOrders.filter(w=>w.property_id===dp.id).slice(0,5).map(wo=>{const st=getStage(wo.stage); return <div key={wo.id} className="list-row" style={{padding:"10px 0"}}><div className={`pri-bar pri-${wo.priority}`} style={{height:28}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{wo.wo_number} — {wo.title}</div></div><Badge c={stageBadge(wo.stage)}>{st.label}</Badge></div>;})}
+        </div>
+        {activeRole==="manager"&&<div style={{marginTop:24,display:"flex",gap:10}}>
+          <button className="btn-sm primary" onClick={()=>openEdit(dp)}>Edit Property</button>
+          <button className="btn-sm ghost" style={{color:"var(--error)",borderColor:"var(--error)"}} onClick={()=>setConfirmDelete(dp.id)}>Delete</button>
+        </div>}
+      </div>
+    </SlidePanel>}
+
+    {/* Edit Property Modal */}
+    {showEdit&&<Modal title="Edit <em>Property</em>" sub="Update property details" onClose={()=>setShowEdit(null)}>
+      <Field label="Street Address"><input className="fi no-icon" value={ef.address} onChange={e=>setEf({...ef,address:e.target.value})}/></Field>
+      <div className="form-row"><Field label="City"><input className="fi no-icon" value={ef.city} onChange={e=>setEf({...ef,city:e.target.value})}/></Field><div className="form-row"><Field label="State"><input className="fi no-icon" value={ef.state} onChange={e=>setEf({...ef,state:e.target.value})}/></Field><Field label="ZIP"><input className="fi no-icon" value={ef.zip} onChange={e=>setEf({...ef,zip:e.target.value})}/></Field></div></div>
+      <div className="form-row"><Field label="Beds"><input className="fi no-icon" type="number" value={ef.beds} onChange={e=>setEf({...ef,beds:e.target.value})}/></Field><Field label="Baths"><input className="fi no-icon" type="number" value={ef.baths} onChange={e=>setEf({...ef,baths:e.target.value})}/></Field><Field label="Monthly Rent"><input className="fi no-icon" type="number" value={ef.monthly_rent} onChange={e=>setEf({...ef,monthly_rent:e.target.value})}/></Field></div>
+      <Field label="Status"><select className="fi no-icon sel" value={ef.status} onChange={e=>setEf({...ef,status:e.target.value})}><option value="occupied">Occupied</option><option value="vacant">Vacant</option></select></Field>
+      {owners.length>0&&<Field label="Property Owner"><select className="fi no-icon sel" value={ef.owner_id} onChange={e=>setEf({...ef,owner_id:e.target.value})}><option value="">Select owner…</option>{owners.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></Field>}
+      <Field label="Notes"><textarea className="fi no-icon ta" value={ef.notes} onChange={e=>setEf({...ef,notes:e.target.value})}/></Field>
+      <button className="btn-primary" style={{marginTop:12}} onClick={saveEdit}>Save Changes</button>
+    </Modal>}
+
+    {/* Delete Confirmation Modal */}
+    {confirmDelete&&<Modal title="Delete <em>Property</em>" onClose={()=>setConfirmDelete(null)}>
+      <p style={{fontSize:14,color:"var(--text-body)",lineHeight:1.6,marginBottom:16}}>Are you sure you want to delete this property? This action cannot be undone. Any associated work orders and payments will remain but will no longer be linked to this property.</p>
+      <div style={{display:"flex",gap:10}}>
+        <button className="btn-sm ghost" onClick={()=>setConfirmDelete(null)}>Cancel</button>
+        <button className="btn-sm primary" style={{background:"var(--error)"}} onClick={()=>doDelete(confirmDelete)}>Delete Property</button>
+      </div>
+    </Modal>}
+  </AppShell>;
+}
+
+/* ═══════════════════════════════════════════
+   WORK ORDERS PAGE (9-stage lifecycle)
+   ═══════════════════════════════════════════ */
+function WorkOrdersPage() {
+  const {user,activeRole,data,navigate,toast,createWorkOrder,setWorkOrderStage,assignContractor}=useApp();
+  const [filter,setFilter]=useState("active"); const [search,setSearch]=useState(""); const [showNew,setShowNew]=useState(false); const [detail,setDetail]=useState(null);
+  const [nf,setNf]=useState({title:"",property_id:"",category:"general",priority:"normal",notes:"",timing:"immediate",contractor_id:""});
+
+  const myWOs=useMemo(()=>{
+    let list=activeRole==="contractor"?data.workOrders.filter(w=>w.contractor_id===user.id||(!w.contractor_id&&w.stage<=2)):activeRole==="tenant"?data.workOrders.filter(w=>w.submitted_by===user.id):data.workOrders;
+    if(filter==="active") list=list.filter(w=>w.stage<9);
+    else if(filter==="closed") list=list.filter(w=>w.stage===9);
+    if(search) list=list.filter(w=>w.title.toLowerCase().includes(search.toLowerCase())||w.wo_number.toLowerCase().includes(search.toLowerCase()));
+    return list.sort((a,b)=>{const p={urgent:0,high:1,normal:2,low:3};return a.stage===b.stage?p[a.priority]-p[b.priority]:a.stage-b.stage;});
+  },[data,activeRole,user,filter,search]);
+
+  const [advancing,setAdvancing]=useState(false);
+  const advanceStage=async (woId)=>{
+    if(advancing) return;
+    setAdvancing(true);
+    try {
+      const wo = data.workOrders.find(w=>w.id===woId);
+      if(!wo) return;
+      const updated = await setWorkOrderStage(woId, Math.min(wo.stage + 1, 9));
+      if(updated) { toast("Work order updated!"); setDetail(null); }
+    } finally { setAdvancing(false); }
+  };
+  const doAssignContractor=async (woId,cId)=>{
+    const updated = await assignContractor(woId,cId);
+    if(updated){ toast("Contractor assigned!"); }
+  };
+  const createWOAction=async ()=>{
+    if(!nf.title.trim()||!nf.property_id) return;
+    await createWorkOrder({property_id:nf.property_id,category:nf.category,title:nf.title,notes:nf.notes,timing:nf.timing,scheduled_date:null,scheduled_time:null,stage:1,priority:nf.priority,submitted_by:user.id,contractor_id:nf.contractor_id||null});
+    setShowNew(false); setNf({title:"",property_id:"",category:"general",priority:"normal",notes:"",timing:"immediate",contractor_id:""});
+  };
+
+  const contractors=data.users.filter(u=>u.roles.includes("contractor"));
+  const U=id=>data.users.find(u=>u.id===id); const P=id=>data.properties.find(p=>p.id===id);
+  const dwo=detail?data.workOrders.find(w=>w.id===detail):null;
+  const availProps=activeRole==="tenant"?data.properties.filter(p=>p.id===user.property_id):data.properties;
+  const cats=["hvac","plumbing","electrical","roofing","appliances","landscaping","painting","general"];
+
+  return <AppShell page="workorders">
+    <div className="page-header"><div><div className="page-title">{activeRole==="tenant"?"My ":""}< em>Work Orders</em></div><div className="page-sub">{myWOs.length} work orders</div></div>
+      {activeRole!=="contractor"&&<button className="btn-sm primary" onClick={()=>setShowNew(true)}>{icons.plus} {activeRole==="tenant"?"Submit Request":"New Work Order"}</button>}
+    </div>
+    <div className="filter-bar">
+      {[["active","Active"],["closed","Closed"]].map(([k,l])=><div key={k} className={`ftab${filter===k?" active":""}`} onClick={()=>setFilter(k)}>{l}</div>)}
+      <div style={{position:"relative",marginLeft:"auto"}}><span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",opacity:.4}}>{icons.search}</span><input className="filter-search" placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+    </div>
+
+    <div className="panel">{myWOs.map(wo=>{const p=P(wo.property_id); const st=getStage(wo.stage); const assigned=U(wo.contractor_id);
+      return <div key={wo.id} className="list-row" onClick={()=>setDetail(wo.id)}>
+        <div className={`pri-bar pri-${wo.priority}`}/>
+        <div style={{flex:1,minWidth:0}}><div className="row-title"><span style={{color:"var(--text-muted)",fontWeight:500,marginRight:8}}>{wo.wo_number}</span>{wo.title}</div><div className="row-sub">{p?.address} · {assigned?assigned.name:"Unassigned"} · {wo.category}</div></div>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0}}>
+          <Badge c={priBadge(wo.priority)}>{priLabel(wo.priority)}</Badge>
+          <Badge c={stageBadge(wo.stage)}>Stage {wo.stage}: {st.label}</Badge>
+          <span style={{fontSize:11,color:"var(--text-muted)"}}>{daysAgo(wo.created_at)}</span>
+        </div>
+      </div>;
+    })}{!myWOs.length&&<EmptyState icon="🔧" text="No work orders found"/>}</div>
+
+    {/* New Work Order Modal */}
+    {showNew&&<Modal title="New <em>Work Order</em>" onClose={()=>setShowNew(false)}>
+      <Field label="Title"><input className="fi no-icon" value={nf.title} onChange={e=>setNf({...nf,title:e.target.value})} placeholder="Brief description of the issue"/></Field>
+      <div className="form-row">
+        <Field label="Property"><select className="fi no-icon sel" value={nf.property_id} onChange={e=>setNf({...nf,property_id:e.target.value})}><option value="">Select…</option>{availProps.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}</select></Field>
+        <Field label="Category"><select className="fi no-icon sel" value={nf.category} onChange={e=>setNf({...nf,category:e.target.value})}>{cats.map(c=><option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>)}</select></Field>
+      </div>
+      <div className="form-row">
+        <Field label="Priority"><select className="fi no-icon sel" value={nf.priority} onChange={e=>setNf({...nf,priority:e.target.value})}><option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></Field>
+        <Field label="Timing"><select className="fi no-icon sel" value={nf.timing} onChange={e=>setNf({...nf,timing:e.target.value})}><option value="immediate">Immediate</option><option value="scheduled">Scheduled</option></select></Field>
+      </div>
+      {activeRole==="manager"&&<Field label="Assign Contractor (optional)"><select className="fi no-icon sel" value={nf.contractor_id} onChange={e=>setNf({...nf,contractor_id:e.target.value})}><option value="">Assign later…</option>{contractors.map(c=><option key={c.id} value={c.id}>{c.name} — {c.trade||c.company_name}</option>)}</select></Field>}
+      <Field label="Details"><textarea className="fi no-icon ta" value={nf.notes} onChange={e=>setNf({...nf,notes:e.target.value})} placeholder="Detailed description…"/></Field>
+      <button className="btn-primary" style={{marginTop:12}} onClick={createWOAction}>Create Work Order</button>
+    </Modal>}
+
+    {/* Work Order Detail Panel (9-stage lifecycle view) */}
+    {dwo&&<SlidePanel title={`<em>${dwo.wo_number}</em>`} sub={dwo.title} onClose={()=>setDetail(null)}>
+      <div style={{padding:24}}>
+        {/* Stage progress */}
+        <div className="sec-label">Lifecycle Progress</div>
+        <div className="stage-track">{STAGES.map(s=><div key={s.n} className={`stage-dot${dwo.stage>=s.n?" done":""}${dwo.stage===s.n?" current":""}`}><div className="sd-n">{dwo.stage>s.n?"✓":s.n}</div><div className="sd-lbl">{s.label}</div></div>)}</div>
+
+        <div className="detail-grid" style={{marginTop:20}}>
+          <div className="dg-row"><span>Property</span><strong>{P(dwo.property_id)?.address}</strong></div>
+          <div className="dg-row"><span>Category</span><strong>{dwo.category}</strong></div>
+          <div className="dg-row"><span>Priority</span><Badge c={priBadge(dwo.priority)}>{priLabel(dwo.priority)}</Badge></div>
+          <div className="dg-row"><span>Stage</span><Badge c={stageBadge(dwo.stage)}>Stage {dwo.stage}: {getStage(dwo.stage).label}</Badge></div>
+          <div className="dg-row"><span>Submitted by</span><strong>{U(dwo.submitted_by)?.name}</strong></div>
+          <div className="dg-row"><span>Contractor</span><strong>{dwo.contractor_id?U(dwo.contractor_id)?.name:"Unassigned"}</strong></div>
+          <div className="dg-row"><span>Timing</span><strong>{dwo.timing}{dwo.scheduled_date?` · ${dwo.scheduled_date} ${dwo.scheduled_time||""}`:""}</strong></div>
+          {dwo.notes&&<div style={{marginTop:8,padding:12,background:"var(--beige)",borderRadius:12,fontSize:13,lineHeight:1.6,color:"var(--text-body)"}}>{dwo.notes}</div>}
+        </div>
+
+        {/* Actions based on stage and role */}
+        {dwo.stage<9&&<div style={{marginTop:20,padding:16,background:"var(--forest-mist)",borderRadius:16,border:"1px solid rgba(0,83,87,.12)"}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:".08em",textTransform:"uppercase",color:"var(--forest)",marginBottom:8}}>Next Action</div>
+          <div style={{fontSize:13,color:"var(--text-body)",marginBottom:12}}><strong>{getStage(dwo.stage).who}</strong> — {getStage(dwo.stage).action}</div>
+
+          {/* Assign contractor (manager, stage 1-2) */}
+          {activeRole==="manager"&&dwo.stage<=2&&!dwo.contractor_id&&<div style={{marginBottom:8}}><select className="fi no-icon sel" style={{marginBottom:8}} onChange={e=>{if(e.target.value)doAssignContractor(dwo.id,e.target.value);}}><option value="">Assign contractor…</option>{contractors.map(c=><option key={c.id} value={c.id}>{c.name} — {c.trade}</option>)}</select></div>}
+
+          {/* Advance button */}
+          <button className="btn-sm primary" disabled={advancing} onClick={()=>advanceStage(dwo.id)}>{advancing?"Saving…":getStage(dwo.stage).action || "Advance"} →</button>
+        </div>}
+      </div>
+    </SlidePanel>}
+  </AppShell>;
+}
+
+/* ═══════════════════════════════════════════
+   PAYMENTS PAGE
+   ═══════════════════════════════════════════ */
+function PaymentsPage() {
+  const {user,activeRole,data,toast,createPayment,markPaymentPaid}=useApp();
+  const [filter,setFilter]=useState("all"); const [showNew,setShowNew]=useState(false);
+  const [nf,setNf]=useState({title:"",property_id:"",type:"rent",amount:"",frequency:"one_time",due_date:"",recipient_id:"",note:""});
+
+  const pays=useMemo(()=>{
+    let list=data.payments;
+    if(filter!=="all") list=list.filter(p=>p.status===filter);
+    return list;
+  },[data,filter]);
+
+  const markPaid=async id=>{ await markPaymentPaid(id); };
+  const createPay=async ()=>{
+    if(!nf.title||!nf.amount||!nf.property_id) return;
+    const np={title:nf.title,property_id:nf.property_id,type:nf.type,amount:+nf.amount,frequency:nf.frequency,due_date:nf.due_date||new Date().toISOString().split("T")[0],created_by:user.id,recipient_id:nf.recipient_id||null,note:nf.note||nf.title};
+    await createPayment(np);
+    setShowNew(false); setNf({title:"",property_id:"",type:"rent",amount:"",frequency:"one_time",due_date:"",recipient_id:"",note:""});
+  };
+  const P=id=>data.properties.find(p=>p.id===id);
+  const totalOut=data.payments.filter(p=>p.status!=="paid"&&p.status!=="cancelled").reduce((s,p)=>s+p.amount,0);
+
+  return <AppShell page="payments">
+    <div className="page-header"><div><div className="page-title">Coordinate <em>Payments</em></div><div className="page-sub">Track and manage all payment activity</div></div>
+      {(activeRole==="manager"||activeRole==="owner")&&<button className="btn-sm primary" onClick={()=>setShowNew(true)}>{icons.plus} New Payment</button>}
+    </div>
+    <div className="stats-row" style={{gridTemplateColumns:"repeat(3,1fr)"}}>
+      <StatCard label="Outstanding" value={`$${totalOut.toLocaleString()}`} color={totalOut?"var(--warning)":"var(--success)"}/>
+      <StatCard label="Pending" value={data.payments.filter(p=>p.status==="pending").length}/>
+      <StatCard label="Paid" value={data.payments.filter(p=>p.status==="paid").length} color="var(--success)"/>
+    </div>
+    <div className="filter-bar" style={{marginBottom:16}}>{[["all","All"],["pending","Pending"],["overdue","Overdue"],["paid","Paid"]].map(([k,l])=><div key={k} className={`ftab${filter===k?" active":""}`} onClick={()=>setFilter(k)}>{l}</div>)}</div>
+    <div className="panel">{pays.map(pay=><div key={pay.id} className="list-row">
+      <div style={{width:42,height:42,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0,background:pay.status==="paid"?"var(--success-bg)":pay.status==="overdue"?"var(--error-bg)":"var(--warning-bg)"}}>{pay.type==="rent"?"🏠":pay.type==="maintenance"?"🔧":"💰"}</div>
+      <div style={{flex:1,minWidth:0}}><div className="row-title">{pay.title||pay.note||'Payment'}</div><div className="row-sub">{P(pay.property_id)?.address} · Due: {pay.due_date} · {pay.frequency}</div></div>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700,color:pay.status==="paid"?"var(--success)":"var(--black)"}}>${pay.amount.toLocaleString()}</div><Badge c={pay.status==="paid"?"b-green":pay.status==="overdue"?"b-red":"b-amber"}>{pay.status}</Badge></div>
+        {pay.status!=="paid"&&(activeRole==="manager"||activeRole==="owner")&&<button className="btn-sm" style={{background:"var(--success)",color:"white",padding:"6px 12px",fontSize:11}} onClick={e=>{e.stopPropagation();markPaid(pay.id);}}>Mark Paid</button>}
+      </div>
+    </div>)}{!pays.length&&<EmptyState icon="💰" text="No payments found"/>}</div>
+
+    {showNew&&<Modal title="New <em>Payment</em>" onClose={()=>setShowNew(false)}>
+      <Field label="Title"><input className="fi no-icon" value={nf.title} onChange={e=>setNf({...nf,title:e.target.value})} placeholder="April Rent"/></Field>
+      <div className="form-row">
+        <Field label="Property"><select className="fi no-icon sel" value={nf.property_id} onChange={e=>setNf({...nf,property_id:e.target.value})}><option value="">Select…</option>{data.properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}</select></Field>
+        <Field label="Amount"><input className="fi no-icon" type="number" value={nf.amount} onChange={e=>setNf({...nf,amount:e.target.value})} placeholder="1200"/></Field>
+      </div>
+      <div className="form-row">
+        <Field label="Type"><select className="fi no-icon sel" value={nf.type} onChange={e=>setNf({...nf,type:e.target.value})}><option value="rent">Rent</option><option value="deposit">Deposit</option><option value="maintenance">Maintenance</option><option value="management_fee">Management Fee</option><option value="late_fee">Late Fee</option><option value="other">Other</option></select></Field>
+        <Field label="Frequency"><select className="fi no-icon sel" value={nf.frequency} onChange={e=>setNf({...nf,frequency:e.target.value})}><option value="one_time">One-time</option><option value="monthly">Monthly</option></select></Field>
+      </div>
+      <Field label="Due Date"><input className="fi no-icon" type="date" value={nf.due_date} onChange={e=>setNf({...nf,due_date:e.target.value})}/></Field>
+      <Field label="Recipient"><select className="fi no-icon sel" value={nf.recipient_id} onChange={e=>setNf({...nf,recipient_id:e.target.value})}><option value="">Select…</option>{data.users.filter(u=>u.id!==user.id).map(u=><option key={u.id} value={u.id}>{u.name} ({u.roles.join(", ")})</option>)}</select></Field>
+      <Field label="Note"><textarea className="fi no-icon ta" value={nf.note} onChange={e=>setNf({...nf,note:e.target.value})} placeholder="Optional context…"/></Field>
+      <button className="btn-primary" style={{marginTop:12}} onClick={createPay}>Create Payment</button>
+    </Modal>}
+  </AppShell>;
+}
+
+/* ═══════════════════════════════════════════
+   CONTRACTORS / TENANTS PAGES
+   ═══════════════════════════════════════════ */
+function PeoplePage({type}) {
+  const {data,activeRole}=useApp();
+  const [detail,setDetail]=useState(null);
+  const people=data.users.filter(u=>u.roles.includes(type));
+  const title=type==="contractor"?"Contractors":"Tenants";
+  const dp=detail?people.find(u=>u.id===detail):null;
+  const prop=dp?data.properties.find(p=>type==="tenant"?p.id===dp.property_id:false):null;
+
+  return <AppShell page={type+"s"}>
+    <div className="page-header"><div><div className="page-title"><em>{title}</em></div><div className="page-sub">{people.length} {title.toLowerCase()}</div></div></div>
+    <div className="panel">{people.map(p=><div key={p.id} className="list-row" onClick={()=>setDetail(p.id)}>
+      <div className="avatar-sm">{p.name.split(" ").map(w=>w[0]).join("")}</div>
+      <div style={{flex:1}}><div className="row-title">{p.name}</div><div className="row-sub">{p.email}{p.company_name?` · ${p.company_name}`:""}{p.trade?` · ${p.trade}`:""}</div></div>
+      {type==="contractor"&&<div style={{display:"flex",alignItems:"center",gap:4}}>{icons.star}<span style={{fontSize:13,fontWeight:600}}>{(data.reviews.filter(r=>r.contractor_id===p.id).reduce((s,r)=>s+r.stars,0)/(data.reviews.filter(r=>r.contractor_id===p.id).length||1)).toFixed(1)}</span></div>}
+      {type==="tenant"&&<Badge c="b-forest">{data.properties.find(pr=>pr.id===p.property_id)?.address||"No unit"}</Badge>}
+      {icons.chev}
+    </div>)}{!people.length&&<EmptyState icon="👥" text={`No ${title.toLowerCase()} yet`}/>}</div>
+
+    {dp&&<SlidePanel title={`<em>${dp.name}</em>`} sub={dp.roles.join(", ")} onClose={()=>setDetail(null)}>
+      <div style={{padding:24}}>
+        <div style={{textAlign:"center",marginBottom:20}}><div style={{width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,var(--forest-dark),var(--forest))",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,fontWeight:700,color:"white",margin:"0 auto 12px"}}>{dp.name.split(" ").map(w=>w[0]).join("")}</div><div style={{fontSize:18,fontWeight:700,fontFamily:"var(--font-display)"}}>{dp.name}</div>{dp.company_name&&<div style={{fontSize:12,color:"var(--text-muted)"}}>{dp.company_name}</div>}</div>
+        <div className="detail-grid">
+          <div className="dg-row"><span>Email</span><strong style={{color:"var(--forest)"}}>{dp.email}</strong></div>
+          <div className="dg-row"><span>Phone</span><strong>{dp.phone||"—"}</strong></div>
+          {dp.trade&&<div className="dg-row"><span>Trade</span><strong>{dp.trade}</strong></div>}
+          {dp.license_number&&<div className="dg-row"><span>License</span><strong>{dp.license_number}</strong></div>}
+          {prop&&<div className="dg-row"><span>Property</span><strong>{prop.address}</strong></div>}
+        </div>
+        {type==="contractor"&&<div style={{marginTop:20}}>
+          <div className="sec-label">Reviews ({data.reviews.filter(r=>r.contractor_id===dp.id).length})</div>
+          {data.reviews.filter(r=>r.contractor_id===dp.id).map(r=><div key={r.id} style={{padding:"12px 0",borderBottom:"1px solid rgba(0,83,87,.06)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>{Array(5).fill(0).map((_,i)=><span key={i} style={{color:i<r.stars?"var(--warning)":"var(--sand-dark)",fontSize:14}}>★</span>)}<span style={{fontSize:12,color:"var(--text-muted)",marginLeft:8}}>{r.location_label}</span></div>
+            <div style={{fontSize:13,lineHeight:1.5}}>{r.text}</div>
+          </div>)}
+        </div>}
+      </div>
+    </SlidePanel>}
+  </AppShell>;
+}
+
+/* ═══════════════════════════════════════════
+   CALENDAR PAGE (read-only)
+   ═══════════════════════════════════════════ */
+function CalendarPage() {
+  const {user,activeRole,data}=useApp();
+  const scheduled=data.workOrders.filter(w=>w.scheduled_date&&w.stage>=5&&w.stage<9).sort((a,b)=>a.scheduled_date.localeCompare(b.scheduled_date));
+  const P=id=>data.properties.find(p=>p.id===id);
+  const U=id=>data.users.find(u=>u.id===id);
+  return <AppShell page="calendar">
+    <div className="page-header"><div><div className="page-title"><em>Calendar</em></div><div className="page-sub">Scheduled maintenance visits</div></div></div>
+    <div className="panel">{scheduled.length?scheduled.map(wo=>{const d=new Date(wo.scheduled_date);const months=["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+      return <div key={wo.id} className="list-row">
+        <div className="cal-date"><div className="cal-mon">{months[d.getMonth()]}</div><div className="cal-day">{d.getDate()}</div></div>
+        <div style={{flex:1,minWidth:0}}><div className="row-title">{wo.title}</div><div className="row-sub">{P(wo.property_id)?.address} · {wo.contractor_id?U(wo.contractor_id)?.name:"TBD"}</div></div>
+        <div style={{fontSize:12,fontWeight:600,color:"var(--forest)"}}>{wo.scheduled_time||"TBD"}</div>
+      </div>;
+    }):<EmptyState icon="📅" text="No scheduled visits" sub="Work orders will appear here once scheduled"/>}</div>
+  </AppShell>;
+}
+
+/* ═══════════════════════════════════════════
+   REPORTS PAGE
+   ═══════════════════════════════════════════ */
+function ReportsPage() {
+  const {user,activeRole,data}=useApp();
+  const completedWOs=data.workOrders.filter(w=>w.stage>=7).length;
+  const totalWOs=data.workOrders.length;
+  return <AppShell page="reports">
+    <div className="page-header"><div><div className="page-title"><em>Reports</em></div><div className="page-sub">{activeRole==="contractor"?"Your performance and reviews":"Property and maintenance insights"}</div></div></div>
+    <div className="stats-row"><StatCard label="Total Work Orders" value={totalWOs} icon="📋"/><StatCard label="Completed" value={completedWOs} color="var(--success)" icon="✅"/><StatCard label="Completion Rate" value={totalWOs?Math.round(completedWOs/totalWOs*100)+"%":"—"} color="var(--forest)" icon="📊"/></div>
+    {activeRole==="contractor"&&<div className="panel"><div className="panel-header"><div className="panel-title">My <em>Reviews</em></div></div>
+      {data.reviews.filter(r=>r.contractor_id===user.id).map(r=><div key={r.id} className="list-row"><div style={{display:"flex",gap:2}}>{Array(5).fill(0).map((_,i)=><span key={i} style={{color:i<r.stars?"var(--warning)":"var(--sand-dark)"}}>★</span>)}</div><div style={{flex:1,fontSize:13}}>{r.text}</div><span style={{fontSize:11,color:"var(--text-muted)"}}>{r.location_label}</span></div>)}
+    </div>}
+  </AppShell>;
+}
+
+/* ═══════════════════════════════════════════
+   FINANCIALS PAGE
+   ═══════════════════════════════════════════ */
+function FinancialsPage() {
+  const {data}=useApp();
+  const paid=data.payments.filter(p=>p.status==="paid");
+  const totalCollected=paid.reduce((s,p)=>s+p.amount,0);
+  const pending=data.payments.filter(p=>p.status!=="paid"&&p.status!=="cancelled");
+  return <AppShell page="financials">
+    <div className="page-header"><div><div className="page-title"><em>Financials</em></div><div className="page-sub">Revenue and payment overview</div></div></div>
+    <div className="stats-row"><StatCard label="Total Collected" value={`$${totalCollected.toLocaleString()}`} color="var(--success)" icon="💰"/><StatCard label="Outstanding" value={`$${pending.reduce((s,p)=>s+p.amount,0).toLocaleString()}`} color="var(--warning)" icon="⏳"/><StatCard label="Transactions" value={data.payments.length} icon="📄"/></div>
+    <div className="panel"><div className="panel-header"><div className="panel-title">Payment <em>History</em></div></div>
+      {data.payments.map(p=><div key={p.id} className="list-row"><div style={{flex:1}}><div className="row-title">{p.title||p.note||'Payment'}</div><div className="row-sub">{p.due_date} · {p.type}</div></div><div style={{fontFamily:"var(--font-display)",fontSize:16,fontWeight:700}}>${p.amount}</div><Badge c={p.status==="paid"?"b-green":p.status==="overdue"?"b-red":"b-amber"}>{p.status}</Badge></div>)}
+    </div>
+  </AppShell>;
+}
+
+/* ═══════════════════════════════════════════
+   ACCOUNT PAGE
+   ═══════════════════════════════════════════ */
+function AccountPage() {
+  const {user,data,toast,updateProfile}=useApp();
+  const [f,setF]=useState({name:user.name,email:user.email,phone:user.phone||"",company_name:user.company_name||""});
+  const save=async ()=>{
+    const updated={...user,...f};
+    await updateProfile(updated);
+  };
+  return <AppShell page="account">
+    <div className="page-header"><div><div className="page-title">My <em>Account</em></div><div className="page-sub">Manage your profile and preferences</div></div></div>
+    <div style={{maxWidth:560}}>
+      <div className="panel" style={{padding:28}}>
+        <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
+          <div style={{width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,var(--blue),var(--forest-mid))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:"white",fontFamily:"var(--font-display)"}}>{user.name.split(" ").map(w=>w[0]).join("")}</div>
+          <div><div style={{fontSize:18,fontWeight:700}}>{user.name}</div><div style={{fontSize:13,color:"var(--text-muted)"}}>{user.roles.map(r=>r.charAt(0).toUpperCase()+r.slice(1)).join(" · ")}</div></div>
+        </div>
+        <Field label="Full Name"><input className="fi no-icon" value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field>
+        <Field label="Email"><input className="fi no-icon" type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></Field>
+        <Field label="Phone"><input className="fi no-icon" value={f.phone} onChange={e=>setF({...f,phone:e.target.value})}/></Field>
+        <Field label="Company / Organization"><input className="fi no-icon" value={f.company_name} onChange={e=>setF({...f,company_name:e.target.value})}/></Field>
+        <button className="btn-primary" style={{marginTop:16}} onClick={save}>Save Changes</button>
+      </div>
+    </div>
+  </AppShell>;
+}
+
+/* ═══════════════════════════════════════════
+   INVITE PAGE
+   ═══════════════════════════════════════════ */
+function InvitePage({type}) {
+  const {data,setData,toast,navigate}=useApp();
+  const [f,setF]=useState({name:"",email:"",property_id:"",trade:""});
+  const [sent,setSent]=useState(false);
+  const labels={tenant:{title:"Invite <em>Tenant</em>",sub:"Generate a join code for a new tenant"},owner:{title:"Invite <em>Owner</em>",sub:"Send a connection request to a property owner"},contractor:{title:"Invite <em>Contractor</em>",sub:"Recruit a contractor to your network"}};
+  const send=()=>{
+    if(!f.name||!f.email) return;
+    const code="TT-"+Math.random().toString(36).substr(2,4).toUpperCase()+"-"+Math.random().toString(36).substr(2,4).toUpperCase();
+    toast(`Invite sent to ${f.email} — Code: ${code}`); setSent(true);
+  };
+  return <AppShell page="invite">
+    <div className="page-header"><div><div className="page-title" dangerouslySetInnerHTML={{__html:labels[type]?.title}}/><div className="page-sub">{labels[type]?.sub}</div></div></div>
+    <div style={{maxWidth:480}}>
+      <div className="panel" style={{padding:28}}>
+        {!sent?<>
+          <Field label="Recipient Name"><input className="fi no-icon" value={f.name} onChange={e=>setF({...f,name:e.target.value})} placeholder="Full name"/></Field>
+          <Field label="Email Address"><input className="fi no-icon" type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})} placeholder="email@example.com"/></Field>
+          {type==="tenant"&&<Field label="Property"><select className="fi no-icon sel" value={f.property_id} onChange={e=>setF({...f,property_id:e.target.value})}><option value="">Select property…</option>{data.properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}</select></Field>}
+          {type==="contractor"&&<Field label="Trade Specialty"><input className="fi no-icon" value={f.trade} onChange={e=>setF({...f,trade:e.target.value})} placeholder="e.g. Plumbing, HVAC, Electrical"/></Field>}
+          <button className="btn-primary" style={{marginTop:12}} onClick={send}>Send Invitation</button>
+        </>:<div style={{textAlign:"center",padding:"24px 0"}}>
+          <div style={{fontSize:48,marginBottom:16}}>✅</div>
+          <div style={{fontSize:18,fontWeight:700,fontFamily:"var(--font-display)",marginBottom:8}}>Invitation Sent!</div>
+          <div style={{fontSize:13,color:"var(--text-muted)",marginBottom:20}}>An email has been sent to {f.email}</div>
+          <button className="btn-sm primary" onClick={()=>{setSent(false);setF({name:"",email:"",property_id:"",trade:""});}}>Send Another</button>
+        </div>}
+      </div>
+    </div>
+  </AppShell>;
+}
+
+/* ═══════════════════════════════════════════
+   LANDING PAGE
+   ═══════════════════════════════════════════ */
+function Landing() {
+  const {navigate}=useApp();
+  return <div style={{minHeight:"100vh",background:"var(--beige)"}}>
+    <div className="auth-bg"><div className="bg-dots"/><div className="bg-arch arch-1"/><div className="bg-arch arch-2"/></div>
+    <nav className="auth-nav"><span className="logo-link">TropicTask</span><div style={{display:"flex",gap:12,alignItems:"center"}}><a onClick={()=>navigate("signin")} className="nav-link">Sign in</a><button className="btn-sm primary" onClick={()=>navigate("signup")}>Get Started Free</button></div></nav>
+    <main style={{position:"relative",zIndex:1,maxWidth:800,margin:"0 auto",padding:"100px 24px",textAlign:"center"}}>
+      <h1 style={{fontFamily:"var(--font-display)",fontSize:52,fontWeight:700,lineHeight:1.1,marginBottom:20}}>Property management, <em style={{fontStyle:"italic",color:"var(--forest)"}}>simplified</em></h1>
+      <p style={{fontSize:18,color:"var(--text-muted)",fontWeight:300,lineHeight:1.7,maxWidth:560,margin:"0 auto 40px"}}>Manage properties, coordinate maintenance, track payments, and keep everyone in sync — one platform for managers, owners, tenants, and contractors.</p>
+      <div style={{display:"flex",gap:14,justifyContent:"center"}}><button className="btn-sm primary" style={{padding:"15px 32px",fontSize:16}} onClick={()=>navigate("signup")}>Start for free →</button><button className="btn-sm ghost" style={{padding:"15px 32px",fontSize:16}} onClick={()=>navigate("signin")}>Sign in</button></div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:20,marginTop:80}}>
+        {[{i:"🏠",t:"Properties",d:"Centralized tracking for all properties, components, and maintenance history."},{i:"🔧",t:"9-Stage Work Orders",d:"Full lifecycle from submission to close — with owner approvals and contractor tracking."},{i:"💰",t:"Payments",d:"Coordinate rent, deposits, and maintenance fees. One-time and recurring."}].map(f=><div key={f.t} className="landing-card"><div style={{fontSize:32,marginBottom:16}}>{f.i}</div><div className="landing-card-title">{f.t}</div><div style={{fontSize:14,color:"var(--text-muted)",lineHeight:1.6}}>{f.d}</div></div>)}
+      </div>
+    </main>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   MAIN APP + ROUTER + CSS
+   ═══════════════════════════════════════════ */
+
+export default function App() {
+  const [page,setPage]=useState("landing");
+  const [user,setUser]=useState(null);
+  const [activeRole,setActiveRole]=useState(null);
+  const [data,setDataState]=useState(null);
+  const [toastMsg,setToast]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [isRemote,setIsRemote]=useState(false);
+  const pageParams=useRef({});
+
+  // Fetch all data from Supabase for authenticated user
+  const loadRemoteData = useCallback(async (userId) => {
+    // Wrap each fetch so one failure doesn't block others
+    const safe = (fn) => fn.catch(() => []);
+    const [users, properties, workOrders, payments, components, reviews] = await Promise.all([
+      safe(fetchProfiles()),
+      safe(fetchAllUserProperties(userId)),
+      safe(fetchWorkOrders()),
+      safe(fetchPayments()),
+      safe(fetchComponents()),
+      safe(fetchReviews()),
+    ]);
+    const remoteData = {
+      users: users.length ? users : [],
+      properties: properties.length ? properties : [],
+      workOrders: workOrders.length ? workOrders : [],
+      payments: payments.length ? payments : [],
+      components: components.length ? components : [],
+      reviews: reviews.length ? reviews : [],
+      invites: [],
+      _nextId: SEED._nextId,
+    };
+    setDataState(remoteData);
+    saveStore(remoteData);
+    return remoteData;
+  }, []);
+
+  useEffect(()=>{
+    async function init() {
+      if (isSupabaseConfigured()) {
+        setIsRemote(true);
+        try {
+          const session = await getSupabaseSession();
+          if (session?.user) {
+            const profile = await fetchProfile(session.user.id);
+            if (profile) {
+              setUser(profile);
+              setActiveRole(profile.roles?.[0] || 'manager');
+              setPage('dashboard');
+              await loadRemoteData(session.user.id);
+              setLoading(false);
+              return;
+            }
+          }
+          // No session — show landing with seed data so demo login works
+          const s = loadStore();
+          setDataState(s || SEED);
+        } catch {
+          const s = loadStore();
+          setDataState(s || SEED);
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+      const s = loadStore();
+      setDataState(s || SEED);
+      setLoading(false);
+    }
+    init();
+  }, [loadRemoteData]);
+
+  const setData = useCallback(nd => {
+    setDataState(nd);
+    saveStore(nd);
+  }, []);
+  const navigate=useCallback((pg,params={})=>{pageParams.current=params;setPage(pg);window.scrollTo(0,0);},[]);
+  const toast=useCallback(msg=>setToast(msg),[]);
+  const logout=useCallback(async()=>{if(isRemote){await supabaseSignOut();}setUser(null);setActiveRole(null);setPage('signin');},[isRemote]);
+
+  const createProperty = useCallback(async (property) => {
+    if (isRemote) {
+      const created = await supabaseCreateProperty(property);
+      if (created) {
+        setData({...data, properties:[...data.properties, created]});
+        toast('Property added.');
+        return created;
+      }
+    }
+    const id = 'p'+data._nextId.p;
+    const local = {...property, id, status:'vacant', created_at:new Date().toISOString()};
+    setData({...data, properties:[...data.properties, local], _nextId:{...data._nextId,p:data._nextId.p+1}});
+    toast('Property added.');
+    return local;
+  }, [isRemote, data, setData, toast]);
+
+  const updatePropertyAction = useCallback(async (propertyId, updates) => {
+    if (isRemote) {
+      const updated = await supabaseUpdateProperty(propertyId, updates);
+      if (updated) {
+        setData({...data, properties:data.properties.map(p=>p.id===propertyId?updated:p)});
+        toast('Property updated.');
+        return updated;
+      }
+    }
+    const updatedLocal = data.properties.map(p=>p.id===propertyId?{...p,...updates,updated_at:new Date().toISOString()}:p);
+    setData({...data, properties:updatedLocal});
+    toast('Property updated.');
+    return updatedLocal.find(p=>p.id===propertyId);
+  }, [isRemote, data, setData, toast]);
+
+  const deletePropertyAction = useCallback(async (propertyId) => {
+    if (isRemote) {
+      const success = await supabaseDeleteProperty(propertyId);
+      if (success) {
+        setData({...data, properties:data.properties.filter(p=>p.id!==propertyId)});
+        toast('Property deleted.');
+        return true;
+      }
+      return false;
+    }
+    setData({...data, properties:data.properties.filter(p=>p.id!==propertyId)});
+    toast('Property deleted.');
+    return true;
+  }, [isRemote, data, setData, toast]);
+
+  const createWorkOrder = useCallback(async (wo) => {
+    if (isRemote) {
+      const created = await supabaseCreateWorkOrder(wo);
+      if (created) {
+        setData({...data, workOrders:[...data.workOrders, created]});
+        toast('Work order created.');
+        return created;
+      }
+    }
+    const id = 'wo'+data._nextId.wo;
+    const local = {...wo, id, wo_number:`WO-${1000+data._nextId.wo}`, created_at:new Date().toISOString()};
+    setData({...data, workOrders:[...data.workOrders, local], _nextId:{...data._nextId,wo:data._nextId.wo+1}});
+    toast('Work order created.');
+    return local;
+  }, [isRemote, data, setData, toast]);
+
+  const setWorkOrderStage = useCallback(async (woId, newStage, override={}) => {
+    if (isRemote) {
+      const updated = await supabaseUpdateWorkOrderStage(woId, newStage, override);
+      if (updated) {
+        setData({...data, workOrders:data.workOrders.map(w=>w.id===woId?updated:w)});
+        return updated;
+      }
+      toast('Warning: change may not have saved');
+    }
+    const updatedLocal = data.workOrders.map(w=>w.id===woId?{...w,stage:newStage,...override}:w);
+    setData({...data, workOrders: updatedLocal});
+    return updatedLocal.find(w=>w.id===woId);
+  }, [isRemote, data, setData, toast]);
+
+  const assignContractor = useCallback(async (woId, contractorId) => {
+    const existing = data.workOrders.find(w=>w.id===woId);
+    if (!existing) return;
+    const nextStage = Math.max(existing.stage, 3);
+    if (isRemote) {
+      const updated = await supabaseUpdateWorkOrderStage(woId, nextStage, {contractor_id:contractorId});
+      if (updated) {
+        setData({...data, workOrders:data.workOrders.map(w=>w.id===woId?updated:w)}); return updated;
+      }
+      toast('Warning: change may not have saved');
+    }
+    const updatedLocal = data.workOrders.map(w=>w.id===woId?{...w, contractor_id:contractorId, stage:nextStage}:w);
+    setData({...data, workOrders:updatedLocal});
+    return updatedLocal.find(w=>w.id===woId);
+  }, [isRemote, data, setData, toast]);
+
+  const createPayment = useCallback(async (payment) => {
+    if (isRemote) {
+      const created = await supabaseCreatePayment(payment);
+      if (created) {
+        setData({...data, payments:[...data.payments, created]});
+        toast('Payment request created.');
+        return created;
+      }
+    }
+    const id='pay'+data._nextId.pay;
+    const local = {...payment, id, status:'pending', created_at:new Date().toISOString()};
+    setData({...data, payments:[...data.payments, local], _nextId:{...data._nextId,pay:data._nextId.pay+1}});
+    toast('Payment request created.');
+    return local;
+  }, [isRemote, data, setData, toast]);
+
+  const markPaymentPaid = useCallback(async (paymentId) => {
+    if(isRemote) {
+      const updated = await supabaseUpdatePaymentStatus(paymentId, 'paid');
+      if(updated) { setData({...data,payments:data.payments.map(p=>p.id===paymentId?updated:p)}); toast('Marked as paid.'); return updated; }
+    }
+    const updatedLocal = data.payments.map(p=>p.id===paymentId?{...p,status:'paid'}:p);
+    setData({...data, payments: updatedLocal});
+    toast('Marked as paid.');
+    return updatedLocal.find(p=>p.id===paymentId);
+  }, [isRemote,data,setData,toast]);
+
+  const updateProfile = useCallback(async (profile) => {
+    if (isRemote) {
+      const updated = await supabaseUpdateProfile(profile.id, { name: profile.name, email: profile.email, phone: profile.phone, company_name: profile.company_name });
+      if (updated) { setUser(updated); setData({...data, users:data.users.map(u=>u.id===updated.id?updated:u)}); toast('Profile updated.'); return updated; }
+    }
+    setUser(profile);
+    setData({...data, users:data.users.map(u=>u.id===profile.id?profile:u)});
+    toast('Profile updated.');
+    return profile;
+  }, [isRemote,data,setData,toast]);
+
+  if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:"#005357",fontStyle:"italic"}}>TropicTask</span></div>;
+
+  const ctx={user,setUser,activeRole,setActiveRole,data,setData,navigate,toast,logout,createProperty,updateProperty:updatePropertyAction,deleteProperty:deletePropertyAction,createWorkOrder,setWorkOrderStage,assignContractor,createPayment,markPaymentPaid,updateProfile,isRemote,params:pageParams.current};
+  const inviteType=pageParams.current?.type||"tenant";
+
+  return <Ctx.Provider value={ctx}>
+    {/* CSS loaded via globals.css import in main.jsx */}
+    {page==="landing"&&<Landing/>}
+    {page==="signin"&&<SignIn/>}
+    {page==="signup"&&<SignUp/>}
+    {page==="dashboard"&&<Dashboard/>}
+    {page==="properties"&&<PropertiesPage/>}
+    {page==="workorders"&&<WorkOrdersPage/>}
+    {page==="payments"&&<PaymentsPage/>}
+    {page==="contractors"&&<PeoplePage type="contractor"/>}
+    {page==="tenants"&&<PeoplePage type="tenant"/>}
+    {page==="calendar"&&<CalendarPage/>}
+    {page==="reports"&&<ReportsPage/>}
+    {page==="financials"&&<FinancialsPage/>}
+    {page==="account"&&<AccountPage/>}
+    {page==="invite"&&<InvitePage type={inviteType}/>}
+    {page==="documents"&&<AppShell page="documents"><div className="page-header"><div><div className="page-title"><em>Documents</em></div><div className="page-sub">Files shared by your property manager</div></div></div><div className="panel"><div className="panel-header"><div className="panel-title">My <em>Files</em></div><span className="badge b-forest">{4} documents</span></div>{[{n:"Lease Agreement",s:"142 KB",i:"📄",date:"Mar 1, 2025",type:"PDF"},{n:"Move-in Inspection Report",s:"88 KB",i:"📋",date:"Mar 5, 2025",type:"PDF"},{n:"Community Rules & Regulations",s:"54 KB",i:"📜",date:"Jan 15, 2025",type:"PDF"},{n:"Key & Access Code Info",s:"12 KB",i:"🔑",date:"Mar 1, 2025",type:"TXT"}].map(d=><div key={d.n} className="list-row"><span style={{fontSize:20}}>{d.i}</span><div style={{flex:1}}><div className="row-title">{d.n}</div><div className="row-sub">{d.type} · {d.s} · Shared {d.date}</div></div><button className="btn-sm ghost" style={{padding:"5px 12px",fontSize:11}} onClick={()=>ctx.toast(`"${d.n}" download started`)}>Download</button></div>)}</div></AppShell>}
+    {toastMsg&&<Toast msg={toastMsg} onDone={()=>setToast(null)}/>}
+  </Ctx.Provider>;
+}

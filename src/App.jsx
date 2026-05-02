@@ -81,10 +81,10 @@ function Modal({title,sub,onClose,wide,children}) {
   </div>;
 }
 
-function SlidePanel({title,sub,onClose,children}) {
+function SlidePanel({title,sub,onClose,children,wide}) {
   return <>
     <div style={{position:"fixed",inset:0,zIndex:300,background:"rgba(0,0,0,.45)",transition:"background .35s"}} onClick={onClose}/>
-    <div style={{position:"fixed",top:0,right:0,bottom:0,zIndex:400,width:420,maxWidth:"100vw",background:"white",boxShadow:"-8px 0 48px rgba(0,0,0,.2)",borderRadius:"24px 0 0 24px",overflow:"hidden",display:"flex",flexDirection:"column",animation:"slideIn .35s cubic-bezier(.32,0,.15,1) both"}}>
+    <div className="slide-panel" style={{position:"fixed",top:0,right:0,bottom:0,zIndex:400,width:wide?640:560,maxWidth:"100vw",background:"white",boxShadow:"-8px 0 48px rgba(0,0,0,.2)",borderRadius:"24px 0 0 24px",overflow:"hidden",display:"flex",flexDirection:"column",animation:"slideIn .35s cubic-bezier(.32,0,.15,1) both"}}>
       <div style={{padding:"22px 24px 18px",borderBottom:"1px solid rgba(0,83,87,.08)",display:"flex",justifyContent:"space-between",flexShrink:0}}>
         <div><div className="panel-title" dangerouslySetInnerHTML={{__html:title}}/>{sub&&<div style={{fontSize:12,color:"var(--text-muted)",marginTop:3}}>{sub}</div>}</div>
         <button onClick={onClose} className="close-btn">{icons.x}</button>
@@ -669,12 +669,18 @@ function WorkOrdersPage() {
   const [expenseForm,setExpenseForm]=useState({amount:"",description:"",payment_type:"company_card",receipt_url:null,receipt_name:null});
   const [previewReceipt,setPreviewReceipt]=useState(null);
 
+  const fileInputRef=useRef(null);
   const onReceiptFile=(e)=>{
     const file=e.target.files?.[0]; if(!file) return;
-    if(file.size>2*1024*1024){ toast('File too large (max 2MB).'); return; }
+    if(file.size>2*1024*1024){ toast('File too large (max 2MB).'); e.target.value=""; return; }
     const reader=new FileReader();
-    reader.onload=ev=>setExpenseForm(f=>({...f,receipt_url:ev.target.result,receipt_name:file.name}));
+    reader.onload=ev=>{
+      setExpenseForm(f=>({...f,receipt_url:ev.target.result,receipt_name:file.name}));
+      toast('Receipt attached.');
+    };
+    reader.onerror=()=>toast('Could not read file.');
     reader.readAsDataURL(file);
+    e.target.value="";
   };
   const submitExpense=async()=>{
     if(!expenseForm.amount||!expenseForm.description.trim()||!detail) return;
@@ -766,7 +772,7 @@ function WorkOrdersPage() {
     </Modal>}
 
     {/* Work Order Detail Panel (9-stage lifecycle view) */}
-    {dwo&&<SlidePanel title={`<em>${dwo.wo_number}</em>`} sub={dwo.title} onClose={()=>setDetail(null)}>
+    {dwo&&<SlidePanel title={`<em>${dwo.wo_number}</em>`} sub={dwo.title} onClose={()=>setDetail(null)} wide>
       <div style={{padding:24}}>
         {/* Stage progress */}
         <div className="sec-label">Lifecycle Progress</div>
@@ -843,14 +849,13 @@ function WorkOrdersPage() {
       <Field label="Description"><textarea className="fi no-icon ta" value={expenseForm.description} onChange={e=>setExpenseForm({...expenseForm,description:e.target.value})} placeholder="What was purchased or paid for"/></Field>
       <Field label="Payment Type"><select className="fi no-icon sel" value={expenseForm.payment_type} onChange={e=>setExpenseForm({...expenseForm,payment_type:e.target.value})}><option value="company_card">Company Card</option><option value="personal">Personal Funds</option></select></Field>
       <Field label="Receipt (optional)" sub="Upload an image or PDF — max 2MB">
-        <div className="receipt-uploader">
-          {!expenseForm.receipt_url&&<label className="receipt-pick"><input type="file" accept="image/*,.pdf" onChange={onReceiptFile} style={{display:"none"}}/><span style={{display:"flex",alignItems:"center",gap:8,color:"var(--forest)",fontSize:13,fontWeight:500,cursor:"pointer"}}>{icons.upload} Choose receipt file</span></label>}
-          {expenseForm.receipt_url&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"var(--forest-mist)",borderRadius:10}}>
-            <span style={{fontSize:18}}>📎</span>
-            <span style={{flex:1,fontSize:12,color:"var(--text-body)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{expenseForm.receipt_name}</span>
-            <button className="btn-sm ghost" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setExpenseForm({...expenseForm,receipt_url:null,receipt_name:null})}>Remove</button>
-          </div>}
-        </div>
+        <input ref={fileInputRef} type="file" accept="image/*,application/pdf" onChange={onReceiptFile} style={{display:"none"}}/>
+        {!expenseForm.receipt_url&&<button type="button" className="receipt-uploader" onClick={()=>fileInputRef.current?.click()} style={{width:"100%",border:"1.5px dashed rgba(0,83,87,.25)",cursor:"pointer",background:"var(--beige)",padding:"18px 14px",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",gap:10,color:"var(--forest)",fontSize:13,fontWeight:500,fontFamily:"var(--font-body)"}}>{icons.upload} Click to choose receipt file</button>}
+        {expenseForm.receipt_url&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"var(--forest-mist)",borderRadius:12}}>
+          {expenseForm.receipt_url.startsWith("data:image")?<img src={expenseForm.receipt_url} alt="" style={{width:36,height:36,borderRadius:6,objectFit:"cover"}}/>:<span style={{fontSize:22}}>📄</span>}
+          <span style={{flex:1,fontSize:12,color:"var(--text-body)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{expenseForm.receipt_name}</span>
+          <button type="button" className="btn-sm ghost" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setExpenseForm({...expenseForm,receipt_url:null,receipt_name:null})}>Remove</button>
+        </div>}
       </Field>
       <button className="btn-primary" style={{marginTop:12}} onClick={submitExpense}>Log Expense</button>
     </Modal>}
@@ -1275,9 +1280,12 @@ export default function App() {
     init();
   }, [loadRemoteData]);
 
+  const saveTimerRef = useRef(null);
   const setData = useCallback(nd => {
     setDataState(nd);
-    saveStore(nd);
+    // Debounce localStorage writes to keep typing/uploads snappy
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => { saveStore(nd); }, 300);
   }, []);
   const navigate=useCallback((pg,params={})=>{pageParams.current=params;setPage(pg);window.scrollTo(0,0);},[]);
   const toast=useCallback(msg=>setToast(msg),[]);

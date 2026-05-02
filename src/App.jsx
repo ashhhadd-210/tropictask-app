@@ -624,29 +624,92 @@ function PropertiesPage() {
     </Modal>}
 
     {/* Property Detail Slide Panel */}
-    {dp&&<SlidePanel title={`<em>${dp.address}</em>`} sub={`${dp.city}, ${dp.state} ${dp.zip}`} onClose={()=>setDetail(null)}>
-      <div style={{padding:24}}>
-        <div className="detail-grid">
-          <div className="dg-row"><span>Type</span><strong>{dp.type}</strong></div>
-          <div className="dg-row"><span>Beds / Baths</span><strong>{dp.beds} / {dp.baths}</strong></div>
-          <div className="dg-row"><span>Monthly Rent</span><strong>${dp.monthly_rent?.toLocaleString()}</strong></div>
-          <div className="dg-row"><span>Status</span><Badge c={dp.status==="occupied"?"b-green":"b-grey"}>{dp.status}</Badge></div>
-          <div className="dg-row"><span>Owner</span><strong>{data.users.find(u=>u.id===dp.owner_id)?.name||"—"}</strong></div>
-          {dp.notes&&<div className="dg-row"><span>Notes</span><strong>{dp.notes}</strong></div>}
+    {dp&&(()=>{
+      const propWOs=data.workOrders.filter(w=>w.property_id===dp.id);
+      const openWOs=propWOs.filter(w=>w.stage<9);
+      const propExpenses=(data.expenses||[]).filter(e=>e.property_id===dp.id);
+      const totalSpent=propExpenses.reduce((s,e)=>s+(+e.amount||0),0);
+      const propComponents=data.components.filter(c=>c.property_id===dp.id);
+      const propTenant=data.users.find(u=>u.property_id===dp.id);
+      const propPayments=data.payments.filter(p=>p.property_id===dp.id);
+      const owner=data.users.find(u=>u.id===dp.owner_id);
+
+      return <SlidePanel title={`<em>${dp.address}</em>`} sub={`${dp.city}, ${dp.state} ${dp.zip}`} onClose={()=>setDetail(null)}>
+        <div style={{padding:24}}>
+          {/* Hero header with property emoji + status */}
+          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20,padding:"16px 18px",background:"var(--forest-mist)",borderRadius:16}}>
+            <div style={{width:60,height:60,borderRadius:14,background:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,flexShrink:0}}>{dp.emoji||"🏠"}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700,color:"var(--text-body)"}}>{dp.type} · {dp.beds} bed · {dp.baths} bath</div>
+              <div style={{fontSize:12,color:"var(--text-muted)",marginTop:2}}>{dp.sqft?`${dp.sqft.toLocaleString()} sqft · `:""}Built {dp.year_built||"—"}</div>
+            </div>
+            <Badge c={dp.status==="occupied"?"b-green":dp.status==="alert"?"b-amber":"b-grey"}>{dp.status}</Badge>
+          </div>
+
+          {/* Quick stats grid */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
+            <div style={{padding:"12px 10px",background:"var(--success-bg)",borderRadius:12,textAlign:"center"}}><div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700,color:"var(--success)"}}>${(dp.monthly_rent||0).toLocaleString()}</div><div style={{fontSize:10,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Rent / mo</div></div>
+            <div style={{padding:"12px 10px",background:openWOs.length?"var(--warning-bg)":"var(--forest-mist)",borderRadius:12,textAlign:"center"}}><div style={{fontFamily:"var(--font-display)",fontSize:22,fontWeight:700,color:openWOs.length?"var(--warning)":"var(--forest)"}}>{openWOs.length}</div><div style={{fontSize:10,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Open WOs</div></div>
+            <div style={{padding:"12px 10px",background:"var(--blue-mist)",borderRadius:12,textAlign:"center"}}><div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700,color:"#1a6b7a"}}>${totalSpent.toFixed(0)}</div><div style={{fontSize:10,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Total Spent</div></div>
+          </div>
+
+          {/* Details */}
+          <div className="sec-label">Property Details</div>
+          <div className="detail-grid" style={{marginBottom:20}}>
+            <div className="dg-row"><span>Owner</span><strong>{owner?.name||"—"}</strong></div>
+            {propTenant&&<div className="dg-row"><span>Tenant</span><strong>{propTenant.name}</strong></div>}
+            <div className="dg-row"><span>Square Feet</span><strong>{dp.sqft?dp.sqft.toLocaleString():"—"}</strong></div>
+            <div className="dg-row"><span>Year Built</span><strong>{dp.year_built||"—"}</strong></div>
+            {dp.notes&&<div className="dg-row"><span>Notes</span><strong style={{textAlign:"right",maxWidth:"60%"}}>{dp.notes}</strong></div>}
+          </div>
+
+          {/* Components */}
+          <div style={{marginBottom:20}}>
+            <div className="sec-label">Components ({propComponents.length})</div>
+            {propComponents.length===0&&<div style={{fontSize:13,color:"var(--text-muted)",padding:"14px",background:"var(--beige)",borderRadius:12,textAlign:"center"}}>No components tracked yet</div>}
+            {propComponents.map(c=><div key={c.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10}}>
+              <span style={{fontSize:22}}>{c.icon}</span>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{c.name}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>Installed {c.installed} · Last serviced {c.last_serviced}</div></div>
+              <Badge c={c.warranty_status==="ok"?"b-green":c.warranty_status==="soon"?"b-amber":"b-red"}>Warranty {c.warranty_expiry}</Badge>
+            </div>)}
+          </div>
+
+          {/* Work Orders */}
+          {propWOs.length>0&&<div style={{marginBottom:20}}>
+            <div className="sec-label">Work Orders ({propWOs.length})</div>
+            {propWOs.slice(0,6).map(wo=>{const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10}}>
+              <div className={`pri-bar pri-${wo.priority}`} style={{height:32}}/>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{wo.wo_number} — {wo.title}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>{wo.category} · {daysAgo(wo.created_at)}</div></div>
+              <Badge c={stageBadge(wo.stage)}>{st.label}</Badge>
+            </div>;})}
+          </div>}
+
+          {/* Expenses summary */}
+          {propExpenses.length>0&&<div style={{marginBottom:20}}>
+            <div className="sec-label">Expense Summary ({propExpenses.length})</div>
+            <div style={{padding:"12px 14px",background:"var(--forest-mist)",borderRadius:12,display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div><div style={{fontSize:11,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Total Spent on this Property</div><div style={{fontFamily:"var(--font-display)",fontSize:24,fontWeight:700,color:"var(--forest)"}}>${totalSpent.toFixed(2)}</div></div>
+              <div style={{textAlign:"right"}}><div style={{fontSize:11,color:"var(--text-muted)"}}>{propExpenses.filter(e=>e.status==="pending").length} pending</div><div style={{fontSize:12,color:"var(--success)",fontWeight:600}}>${propExpenses.filter(e=>e.status==="approved").reduce((s,e)=>s+(+e.amount||0),0).toFixed(2)} approved</div></div>
+            </div>
+          </div>}
+
+          {/* Recent Payments */}
+          {propPayments.length>0&&<div style={{marginBottom:20}}>
+            <div className="sec-label">Payments ({propPayments.length})</div>
+            {propPayments.slice(0,4).map(pay=><div key={pay.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10}}>
+              <div style={{width:34,height:34,borderRadius:10,background:pay.status==="paid"?"var(--success-bg)":pay.status==="overdue"?"var(--error-bg)":"var(--warning-bg)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{pay.type==="rent"?"🏠":"💰"}</div>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{pay.title||pay.note||"Payment"}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>Due: {pay.due_date} · {pay.type}</div></div>
+              <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--font-display)",fontSize:15,fontWeight:700}}>${pay.amount}</div><Badge c={pay.status==="paid"?"b-green":pay.status==="overdue"?"b-red":"b-amber"}>{pay.status}</Badge></div>
+            </div>)}
+          </div>}
+
+          {activeRole==="manager"&&<div style={{display:"flex",gap:10,paddingTop:12,borderTop:"1px solid rgba(0,83,87,.08)"}}>
+            <button className="btn-sm primary" onClick={()=>openEdit(dp)}>Edit Property</button>
+            <button className="btn-sm ghost" style={{color:"var(--error)",borderColor:"var(--error)"}} onClick={()=>setConfirmDelete(dp.id)}>Delete</button>
+          </div>}
         </div>
-        <div style={{marginTop:20}}><div className="sec-label">Components</div>
-          {data.components.filter(c=>c.property_id===dp.id).map(c=><div key={c.id} className="comp-row"><span style={{fontSize:20}}>{c.icon}</span><div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{c.name}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>Installed: {c.installed} · Warranty: <span style={{color:c.warranty_status==="ok"?"var(--success)":c.warranty_status==="soon"?"var(--warning)":"var(--error)"}}>{c.warranty_expiry}</span></div></div></div>)}
-          {!data.components.filter(c=>c.property_id===dp.id).length&&<div style={{fontSize:13,color:"var(--text-muted)",padding:"12px 0"}}>No components tracked yet.</div>}
-        </div>
-        <div style={{marginTop:20}}><div className="sec-label">Work Orders</div>
-          {data.workOrders.filter(w=>w.property_id===dp.id).slice(0,5).map(wo=>{const st=getStage(wo.stage); return <div key={wo.id} className="list-row" style={{padding:"10px 0"}}><div className={`pri-bar pri-${wo.priority}`} style={{height:28}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{wo.wo_number} — {wo.title}</div></div><Badge c={stageBadge(wo.stage)}>{st.label}</Badge></div>;})}
-        </div>
-        {activeRole==="manager"&&<div style={{marginTop:24,display:"flex",gap:10}}>
-          <button className="btn-sm primary" onClick={()=>openEdit(dp)}>Edit Property</button>
-          <button className="btn-sm ghost" style={{color:"var(--error)",borderColor:"var(--error)"}} onClick={()=>setConfirmDelete(dp.id)}>Delete</button>
-        </div>}
-      </div>
-    </SlidePanel>}
+      </SlidePanel>;
+    })()}
 
     {/* Edit Property Modal */}
     {showEdit&&<Modal title="Edit <em>Property</em>" sub="Update property details" onClose={()=>setShowEdit(null)}>
@@ -964,25 +1027,102 @@ function PeoplePage({type}) {
       {icons.chev}
     </div>)}{!people.length&&<EmptyState icon="👥" text={`No ${title.toLowerCase()} yet`}/>}</div>
 
-    {dp&&<SlidePanel title={`<em>${dp.name}</em>`} sub={dp.roles.join(", ")} onClose={()=>setDetail(null)}>
-      <div style={{padding:24}}>
-        <div style={{textAlign:"center",marginBottom:20}}><div style={{width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,var(--forest-dark),var(--forest))",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,fontWeight:700,color:"white",margin:"0 auto 12px"}}>{dp.name.split(" ").map(w=>w[0]).join("")}</div><div style={{fontSize:18,fontWeight:700,fontFamily:"var(--font-display)"}}>{dp.name}</div>{dp.company_name&&<div style={{fontSize:12,color:"var(--text-muted)"}}>{dp.company_name}</div>}</div>
-        <div className="detail-grid">
-          <div className="dg-row"><span>Email</span><strong style={{color:"var(--forest)"}}>{dp.email}</strong></div>
-          <div className="dg-row"><span>Phone</span><strong>{dp.phone||"—"}</strong></div>
-          {dp.trade&&<div className="dg-row"><span>Trade</span><strong>{dp.trade}</strong></div>}
-          {dp.license_number&&<div className="dg-row"><span>License</span><strong>{dp.license_number}</strong></div>}
-          {prop&&<div className="dg-row"><span>Property</span><strong>{prop.address}</strong></div>}
+    {dp&&(()=>{
+      const reviews=data.reviews.filter(r=>r.contractor_id===dp.id);
+      const avgRating=reviews.length?(reviews.reduce((s,r)=>s+r.stars,0)/reviews.length):0;
+      const contractorWOs=type==="contractor"?data.workOrders.filter(w=>w.contractor_id===dp.id):[];
+      const activeJobs=contractorWOs.filter(w=>w.stage<9);
+      const completedJobs=contractorWOs.filter(w=>w.stage===9);
+      const contractorExpenses=type==="contractor"?(data.expenses||[]).filter(e=>e.contractor_id===dp.id):[];
+      const totalEarnings=contractorExpenses.filter(e=>e.status==="approved").reduce((s,e)=>s+(+e.amount||0),0);
+      const tenantWOs=type==="tenant"?data.workOrders.filter(w=>w.submitted_by===dp.id):[];
+      const tenantPayments=type==="tenant"?data.payments.filter(p=>p.recipient_id===dp.id):[];
+      const tenantOpenWOs=tenantWOs.filter(w=>w.stage<9);
+      const tenantOpenPay=tenantPayments.filter(p=>p.status!=="paid"&&p.status!=="cancelled");
+
+      return <SlidePanel title={`<em>${dp.name}</em>`} sub={dp.roles.join(", ")} onClose={()=>setDetail(null)}>
+        <div style={{padding:24}}>
+          <div style={{textAlign:"center",marginBottom:24}}>
+            <div style={{width:72,height:72,borderRadius:"50%",background:"linear-gradient(135deg,var(--forest-dark),var(--forest))",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:24,fontWeight:700,color:"white",margin:"0 auto 12px",boxShadow:"0 8px 24px rgba(0,83,87,.18)"}}>{dp.name.split(" ").map(w=>w[0]).join("")}</div>
+            <div style={{fontSize:20,fontWeight:700,fontFamily:"var(--font-display)"}}>{dp.name}</div>
+            {dp.company_name&&<div style={{fontSize:13,color:"var(--text-muted)",marginTop:2}}>{dp.company_name}</div>}
+            {type==="contractor"&&reviews.length>0&&<div style={{display:"inline-flex",alignItems:"center",gap:4,marginTop:8,padding:"4px 12px",background:"var(--warning-bg)",borderRadius:100,border:"1px solid var(--warning-border)"}}>{Array(5).fill(0).map((_,i)=><span key={i} style={{color:i<Math.round(avgRating)?"var(--warning)":"var(--sand-dark)",fontSize:13}}>★</span>)}<span style={{fontSize:12,fontWeight:700,marginLeft:4,color:"var(--warning)"}}>{avgRating.toFixed(1)}</span><span style={{fontSize:11,color:"var(--text-muted)"}}>({reviews.length})</span></div>}
+          </div>
+
+          {/* Quick stats grid */}
+          {type==="contractor"&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
+            <div style={{padding:"12px 10px",background:"var(--forest-mist)",borderRadius:12,textAlign:"center"}}><div style={{fontFamily:"var(--font-display)",fontSize:22,fontWeight:700,color:"var(--forest)"}}>{activeJobs.length}</div><div style={{fontSize:10,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Active</div></div>
+            <div style={{padding:"12px 10px",background:"var(--success-bg)",borderRadius:12,textAlign:"center"}}><div style={{fontFamily:"var(--font-display)",fontSize:22,fontWeight:700,color:"var(--success)"}}>{completedJobs.length}</div><div style={{fontSize:10,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Completed</div></div>
+            <div style={{padding:"12px 10px",background:"var(--blue-mist)",borderRadius:12,textAlign:"center"}}><div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700,color:"#1a6b7a"}}>${totalEarnings.toFixed(0)}</div><div style={{fontSize:10,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Earnings</div></div>
+          </div>}
+
+          {type==="tenant"&&<div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:20}}>
+            <div style={{padding:"12px 10px",background:"var(--warning-bg)",borderRadius:12,textAlign:"center"}}><div style={{fontFamily:"var(--font-display)",fontSize:22,fontWeight:700,color:"var(--warning)"}}>{tenantOpenWOs.length}</div><div style={{fontSize:10,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Open Requests</div></div>
+            <div style={{padding:"12px 10px",background:"var(--error-bg)",borderRadius:12,textAlign:"center"}}><div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700,color:"var(--error)"}}>${tenantOpenPay.reduce((s,p)=>s+(+p.amount||0),0).toFixed(0)}</div><div style={{fontSize:10,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Outstanding</div></div>
+          </div>}
+
+          {/* Contact info */}
+          <div className="sec-label">Contact Information</div>
+          <div className="detail-grid" style={{marginBottom:20}}>
+            <div className="dg-row"><span>Email</span><strong style={{color:"var(--forest)"}}>{dp.email}</strong></div>
+            <div className="dg-row"><span>Phone</span><strong>{dp.phone||"—"}</strong></div>
+            {dp.trade&&<div className="dg-row"><span>Trade</span><strong>{dp.trade}</strong></div>}
+            {dp.license_number&&<div className="dg-row"><span>License</span><strong>{dp.license_number}</strong></div>}
+            {prop&&<div className="dg-row"><span>Property</span><strong>{prop.address}</strong></div>}
+          </div>
+
+          {/* Contractor: Active Jobs */}
+          {type==="contractor"&&activeJobs.length>0&&<div style={{marginBottom:20}}>
+            <div className="sec-label">Active Jobs ({activeJobs.length})</div>
+            {activeJobs.map(wo=>{const p=data.properties.find(pr=>pr.id===wo.property_id);const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10}}>
+              <div className={`pri-bar pri-${wo.priority}`} style={{height:32}}/>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{wo.wo_number} — {wo.title}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>{p?.address}</div></div>
+              <Badge c={stageBadge(wo.stage)}>{st.label}</Badge>
+            </div>;})}
+          </div>}
+
+          {/* Contractor: Recent Expenses */}
+          {type==="contractor"&&contractorExpenses.length>0&&<div style={{marginBottom:20}}>
+            <div className="sec-label">Recent Expenses ({contractorExpenses.length})</div>
+            {contractorExpenses.slice(0,5).map(ex=><div key={ex.id} className="expense-row">
+              <div className="expense-icon">{ex.payment_type==="company_card"?"💳":"💵"}</div>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{ex.description}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>{new Date(ex.created_at).toLocaleDateString()} · {ex.payment_type==="company_card"?"Company":"Personal"}</div></div>
+              <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--font-display)",fontSize:15,fontWeight:700}}>${(+ex.amount).toFixed(2)}</div><Badge c={ex.status==="approved"?"b-green":"b-amber"}>{ex.status}</Badge></div>
+            </div>)}
+          </div>}
+
+          {/* Contractor: Reviews */}
+          {type==="contractor"&&<div style={{marginBottom:20}}>
+            <div className="sec-label">Reviews ({reviews.length})</div>
+            {reviews.length===0&&<div style={{padding:"16px 14px",textAlign:"center",background:"var(--beige)",borderRadius:12,fontSize:13,color:"var(--text-muted)"}}>No reviews yet</div>}
+            {reviews.map(r=><div key={r.id} style={{padding:"12px 14px",background:"var(--beige)",borderRadius:12,marginBottom:6}}>
+              <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:6}}>{Array(5).fill(0).map((_,i)=><span key={i} style={{color:i<r.stars?"var(--warning)":"var(--sand-dark)",fontSize:14}}>★</span>)}<span style={{fontSize:11,color:"var(--text-muted)",marginLeft:8}}>{r.location_label}</span></div>
+              <div style={{fontSize:13,lineHeight:1.5,color:"var(--text-body)"}}>{r.text}</div>
+            </div>)}
+          </div>}
+
+          {/* Tenant: Recent Requests */}
+          {type==="tenant"&&tenantWOs.length>0&&<div style={{marginBottom:20}}>
+            <div className="sec-label">Maintenance Requests ({tenantWOs.length})</div>
+            {tenantWOs.slice(0,5).map(wo=>{const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10}}>
+              <div className={`pri-bar pri-${wo.priority}`} style={{height:32}}/>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{wo.wo_number} — {wo.title}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>{daysAgo(wo.created_at)}</div></div>
+              <Badge c={stageBadge(wo.stage)}>{st.label}</Badge>
+            </div>;})}
+          </div>}
+
+          {/* Tenant: Payment History */}
+          {type==="tenant"&&tenantPayments.length>0&&<div style={{marginBottom:20}}>
+            <div className="sec-label">Payment History ({tenantPayments.length})</div>
+            {tenantPayments.slice(0,5).map(pay=><div key={pay.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10}}>
+              <div style={{width:34,height:34,borderRadius:10,background:pay.status==="paid"?"var(--success-bg)":pay.status==="overdue"?"var(--error-bg)":"var(--warning-bg)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{pay.type==="rent"?"🏠":"💰"}</div>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{pay.title||pay.note||"Payment"}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>Due: {pay.due_date} · {pay.type}</div></div>
+              <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--font-display)",fontSize:15,fontWeight:700}}>${pay.amount}</div><Badge c={pay.status==="paid"?"b-green":pay.status==="overdue"?"b-red":"b-amber"}>{pay.status}</Badge></div>
+            </div>)}
+          </div>}
         </div>
-        {type==="contractor"&&<div style={{marginTop:20}}>
-          <div className="sec-label">Reviews ({data.reviews.filter(r=>r.contractor_id===dp.id).length})</div>
-          {data.reviews.filter(r=>r.contractor_id===dp.id).map(r=><div key={r.id} style={{padding:"12px 0",borderBottom:"1px solid rgba(0,83,87,.06)"}}>
-            <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>{Array(5).fill(0).map((_,i)=><span key={i} style={{color:i<r.stars?"var(--warning)":"var(--sand-dark)",fontSize:14}}>★</span>)}<span style={{fontSize:12,color:"var(--text-muted)",marginLeft:8}}>{r.location_label}</span></div>
-            <div style={{fontSize:13,lineHeight:1.5}}>{r.text}</div>
-          </div>)}
-        </div>}
-      </div>
-    </SlidePanel>}
+      </SlidePanel>;
+    })()}
   </AppShell>;
 }
 

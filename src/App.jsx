@@ -56,6 +56,7 @@ const icons = {
   receipt: I(<><path d="M3 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2-3-2z"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="17" x2="13" y2="17"/></>),
   upload: I(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>),
   check: I(<polyline points="20 6 9 17 4 12"/>,16,2.5),
+  menu: I(<><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>,20,2),
   x: I(<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,14,2),
 };
 
@@ -70,26 +71,26 @@ const Badge = ({c,children}) => <span className={`badge ${c}`}>{children}</span>
 function Toast({msg,onDone}) { useEffect(()=>{const t=setTimeout(onDone,2500);return()=>clearTimeout(t);},[onDone]); return <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:9999}}><div className="badge" style={{background:"var(--black)",color:"white",padding:"11px 22px",borderRadius:100,fontSize:13,fontWeight:500,border:"none",animation:"fadeUp .3s ease both"}}>{msg}</div></div>; }
 
 function Modal({title,sub,onClose,wide,children}) {
-  return <div style={{position:"fixed",inset:0,zIndex:500,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",animation:"fadeUp .15s ease"}} onClick={onClose}>
-    <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:24,boxShadow:"0 24px 80px rgba(0,0,0,.2)",width:"100%",maxWidth:wide?640:520,maxHeight:"90vh",overflow:"hidden",display:"flex",flexDirection:"column",animation:"fadeUp .25s ease both"}}>
-      <div style={{padding:"24px 28px 18px",borderBottom:"1px solid rgba(0,83,87,.08)",display:"flex",justifyContent:"space-between",flexShrink:0}}>
+  return <div className="modal-shell" onClick={onClose}>
+    <div className={`modal-card${wide?" wide":""}`} onClick={e=>e.stopPropagation()}>
+      <div className="modal-head">
         <div><div className="panel-title" dangerouslySetInnerHTML={{__html:title}}/>{sub&&<div style={{fontSize:12,color:"var(--text-muted)",marginTop:3}}>{sub}</div>}</div>
         <button onClick={onClose} className="close-btn">{icons.x}</button>
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:"24px 28px 28px"}}>{children}</div>
+      <div className="modal-body">{children}</div>
     </div>
   </div>;
 }
 
 function SlidePanel({title,sub,onClose,children,wide}) {
   return <>
-    <div style={{position:"fixed",inset:0,zIndex:300,background:"rgba(0,0,0,.45)",transition:"background .35s"}} onClick={onClose}/>
-    <div className="slide-panel" style={{position:"fixed",top:0,right:0,bottom:0,zIndex:400,width:wide?640:560,maxWidth:"100vw",background:"white",boxShadow:"-8px 0 48px rgba(0,0,0,.2)",borderRadius:"24px 0 0 24px",overflow:"hidden",display:"flex",flexDirection:"column",animation:"slideIn .35s cubic-bezier(.32,0,.15,1) both"}}>
-      <div style={{padding:"22px 24px 18px",borderBottom:"1px solid rgba(0,83,87,.08)",display:"flex",justifyContent:"space-between",flexShrink:0}}>
+    <div className="slide-overlay-bg" onClick={onClose}/>
+    <div className={`slide-panel${wide?" wide":""}`}>
+      <div className="slide-head">
         <div><div className="panel-title" dangerouslySetInnerHTML={{__html:title}}/>{sub&&<div style={{fontSize:12,color:"var(--text-muted)",marginTop:3}}>{sub}</div>}</div>
         <button onClick={onClose} className="close-btn">{icons.x}</button>
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:0}}>{children}</div>
+      <div className="slide-body">{children}</div>
     </div>
   </>;
 }
@@ -110,7 +111,11 @@ function AppShell({page,children}) {
   const [searchQ, setSearchQ] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Close mobile nav on page change
+  useEffect(()=>{setMobileNavOpen(false);},[page]);
   if(!user) return null;
+  const navTo=(p,params)=>{setMobileNavOpen(false);navigate(p,params);};
   const initials = user.name.split(" ").map(w=>w[0]).join("").toUpperCase();
   const openWOs = data.workOrders.filter(w=>w.stage<9).length;
   const propCount = data.properties.filter(p=> activeRole==="owner"?p.owner_id===user.id : activeRole==="tenant"?data.users.find(u=>u.id===user.id)?.property_id===p.id : p.manager_id===user.id).length;
@@ -163,6 +168,7 @@ function AppShell({page,children}) {
   return <>
     {/* TOPBAR */}
     <header className="topbar">
+      <button className="mobile-menu-btn" onClick={()=>setMobileNavOpen(true)} aria-label="Open menu">{icons.menu}</button>
       <div className="topbar-logo" onClick={()=>navigate("dashboard")}><span className="logo-text">TropicTask</span></div>
       <div className="topbar-center"><div className="topbar-search-wrap" style={{position:"relative"}}><span className="ts-icon">{icons.search}</span><input placeholder="Search properties, work orders, contractors…" value={searchQ} onChange={e=>{setSearchQ(e.target.value);setSearchOpen(true);setNotifOpen(false);}} onFocus={()=>{if(sq.length>=2)setSearchOpen(true);}} onBlur={()=>setTimeout(()=>setSearchOpen(false),200)}/>
         {searchOpen&&searchResults&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:6,background:"white",borderRadius:16,boxShadow:"0 12px 48px rgba(0,0,0,.18)",border:"1px solid rgba(0,83,87,.1)",maxHeight:360,overflowY:"auto",zIndex:999,animation:"fadeUp .2s ease both"}}>
@@ -195,23 +201,24 @@ function AppShell({page,children}) {
     </div>
 
     {/* SIDENAV */}
-    <nav className="sidenav">
+    {mobileNavOpen&&<div className="sidenav-overlay" onClick={()=>setMobileNavOpen(false)}/>}
+    <nav className={`sidenav${mobileNavOpen?" open":""}`}>
       <div className="nav-role-hdr"><div className="nav-role-lbl">{roleLabels[activeRole]}</div><div className="nav-role-sub">{activeRole==="manager"?user.company_name||user.name:activeRole==="contractor"?user.company_name||user.trade||user.name:activeRole==="tenant"?data.properties.find(p=>p.id===user.property_id)?.address||"My Home":user.name}</div></div>
       {navGroups.map(g=><div key={g.g}>
         <div className="nav-grp-lbl">{g.g}</div>
-        {g.items.map(item=><div key={item.p} className={`nav-item${page===item.p?" active":""}`} onClick={()=>navigate(item.p)}>
+        {g.items.map(item=><div key={item.p} className={`nav-item${page===item.p?" active":""}`} onClick={()=>navTo(item.p)}>
           <span className="nav-icon">{item.i}</span>{item.l}
           {item.c>0&&<span className={`nav-count${item.u?" urgent":""}`}>{item.c}</span>}
         </div>)}
       </div>)}
       {(activeRole==="manager")&&<><div className="nav-divider"/><div className="nav-grp-lbl">Invites</div>
-        <div className="nav-item" onClick={()=>navigate("invite",{type:"tenant"})}><span className="nav-icon">{icons.mail}</span>Invite Tenant</div>
-        <div className="nav-item" onClick={()=>navigate("invite",{type:"owner"})}><span className="nav-icon">{icons.mail}</span>Invite Owner</div>
-        <div className="nav-item" onClick={()=>navigate("invite",{type:"contractor"})}><span className="nav-icon">{icons.mail}</span>Invite Contractor</div>
+        <div className="nav-item" onClick={()=>navTo("invite",{type:"tenant"})}><span className="nav-icon">{icons.mail}</span>Invite Tenant</div>
+        <div className="nav-item" onClick={()=>navTo("invite",{type:"owner"})}><span className="nav-icon">{icons.mail}</span>Invite Owner</div>
+        <div className="nav-item" onClick={()=>navTo("invite",{type:"contractor"})}><span className="nav-icon">{icons.mail}</span>Invite Contractor</div>
       </>}
       <div className="nav-divider"/>
       <div className="nav-bottom">
-        <div className="nav-item" onClick={()=>navigate("account")}><span className="nav-icon">{icons.acct}</span>Account</div>
+        <div className="nav-item" onClick={()=>navTo("account")}><span className="nav-icon">{icons.acct}</span>Account</div>
         <div className="nav-item" style={{color:"var(--error)"}} onClick={logout}><span className="nav-icon">{icons.logout}</span>Sign out</div>
       </div>
     </nav>
@@ -393,22 +400,26 @@ function SignUp() {
    ═══════════════════════════════════════════ */
 function Dashboard() {
   const {user,activeRole,data,navigate,toast}=useApp();
-  const U=id=>data.users.find(u=>u.id===id);
-  const P=id=>data.properties.find(p=>p.id===id);
-  const myProps=activeRole==="owner"?data.properties.filter(p=>p.owner_id===user.id):activeRole==="tenant"?data.properties.filter(p=>p.id===user.property_id):data.properties.filter(p=>p.manager_id===user.id);
-  const myWOs=activeRole==="contractor"?data.workOrders.filter(w=>w.contractor_id===user.id||(!w.contractor_id&&w.stage<=2)):activeRole==="tenant"?data.workOrders.filter(w=>w.submitted_by===user.id):data.workOrders;
-  const openWOs=myWOs.filter(w=>w.stage<9);
-  const pendingPay=data.payments.filter(p=>p.status!=="paid"&&p.status!=="cancelled");
-  const occupied=myProps.filter(p=>p.status==="occupied").length;
+  const U=useCallback(id=>data.users.find(u=>u.id===id),[data.users]);
+  const P=useCallback(id=>data.properties.find(p=>p.id===id),[data.properties]);
 
-  // Expense data (Module 5)
-  const allExpenses=data.expenses||[];
-  const myExpenses=activeRole==="contractor"?allExpenses.filter(e=>e.contractor_id===user.id):activeRole==="owner"?allExpenses.filter(e=>myProps.some(p=>p.id===e.property_id)):allExpenses;
-  const totalSpend=myExpenses.reduce((s,e)=>s+(+e.amount||0),0);
-  const pendingSpend=myExpenses.filter(e=>e.status==="pending").reduce((s,e)=>s+(+e.amount||0),0);
-  const approvedSpend=myExpenses.filter(e=>e.status==="approved").reduce((s,e)=>s+(+e.amount||0),0);
-  // Spend per property (top 3)
-  const spendByProp=myProps.map(p=>({prop:p,total:allExpenses.filter(e=>e.property_id===p.id).reduce((s,e)=>s+(+e.amount||0),0)})).filter(x=>x.total>0).sort((a,b)=>b.total-a.total).slice(0,3);
+  const myProps=useMemo(()=>activeRole==="owner"?data.properties.filter(p=>p.owner_id===user.id):activeRole==="tenant"?data.properties.filter(p=>p.id===user.property_id):data.properties.filter(p=>p.manager_id===user.id),[activeRole,user,data.properties]);
+  const myWOs=useMemo(()=>activeRole==="contractor"?data.workOrders.filter(w=>w.contractor_id===user.id||(!w.contractor_id&&w.stage<=2)):activeRole==="tenant"?data.workOrders.filter(w=>w.submitted_by===user.id):data.workOrders,[activeRole,user,data.workOrders]);
+  const openWOs=useMemo(()=>myWOs.filter(w=>w.stage<9),[myWOs]);
+  const pendingPay=useMemo(()=>data.payments.filter(p=>p.status!=="paid"&&p.status!=="cancelled"),[data.payments]);
+  const occupied=useMemo(()=>myProps.filter(p=>p.status==="occupied").length,[myProps]);
+
+  // Expense aggregations memoized
+  const expenseStats=useMemo(()=>{
+    const allExpenses=data.expenses||[];
+    const myExpenses=activeRole==="contractor"?allExpenses.filter(e=>e.contractor_id===user.id):activeRole==="owner"?allExpenses.filter(e=>myProps.some(p=>p.id===e.property_id)):allExpenses;
+    const totalSpend=myExpenses.reduce((s,e)=>s+(+e.amount||0),0);
+    const pendingSpend=myExpenses.filter(e=>e.status==="pending").reduce((s,e)=>s+(+e.amount||0),0);
+    const approvedSpend=myExpenses.filter(e=>e.status==="approved").reduce((s,e)=>s+(+e.amount||0),0);
+    const spendByProp=myProps.map(p=>({prop:p,total:allExpenses.filter(e=>e.property_id===p.id).reduce((s,e)=>s+(+e.amount||0),0)})).filter(x=>x.total>0).sort((a,b)=>b.total-a.total).slice(0,3);
+    return {myExpenses,totalSpend,pendingSpend,approvedSpend,spendByProp};
+  },[data.expenses,activeRole,user,myProps]);
+  const {myExpenses,totalSpend,pendingSpend,approvedSpend,spendByProp}=expenseStats;
 
   return <AppShell page="dashboard">
     <div className="page-header"><div><div className="page-title">Your <em>{activeRole==="contractor"?"Jobs":activeRole==="tenant"?"Home":"Properties"}</em></div><div className="page-sub">{activeRole==="manager"?"Overview of managed properties and open work orders":activeRole==="owner"?"A snapshot of your portfolio":activeRole==="contractor"?"Available work orders and your schedule":"Manage maintenance requests"}</div></div></div>

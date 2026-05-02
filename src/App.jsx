@@ -82,12 +82,13 @@ function Modal({title,sub,onClose,wide,children}) {
   </div>;
 }
 
-function SlidePanel({title,sub,onClose,children,wide}) {
+function SlidePanel({title,sub,onClose,children,size="lg"}) {
+  // size: "lg" (default 720), "xl" (840), "md" (560)
   return <>
     <div className="slide-overlay-bg" onClick={onClose}/>
-    <div className={`slide-panel${wide?" wide":""}`}>
+    <div className={`slide-panel slide-${size}`}>
       <div className="slide-head">
-        <div><div className="panel-title" dangerouslySetInnerHTML={{__html:title}}/>{sub&&<div style={{fontSize:12,color:"var(--text-muted)",marginTop:3}}>{sub}</div>}</div>
+        <div style={{minWidth:0,flex:1}}><div className="panel-title" dangerouslySetInnerHTML={{__html:title}}/>{sub&&<div style={{fontSize:12,color:"var(--text-muted)",marginTop:3}}>{sub}</div>}</div>
         <button onClick={onClose} className="close-btn">{icons.x}</button>
       </div>
       <div className="slide-body">{children}</div>
@@ -783,7 +784,7 @@ function WorkOrdersPage() {
     </Modal>}
 
     {/* Work Order Detail Panel (9-stage lifecycle view) */}
-    {dwo&&<SlidePanel title={`<em>${dwo.wo_number}</em>`} sub={dwo.title} onClose={()=>setDetail(null)} wide>
+    {dwo&&<SlidePanel title={`<em>${dwo.wo_number}</em>`} sub={dwo.title} onClose={()=>setDetail(null)} size="xl">
       <div style={{padding:24}}>
         {/* Stage progress */}
         <div className="sec-label">Lifecycle Progress</div>

@@ -6,7 +6,7 @@ import { isSupabaseConfigured, signIn as supabaseSignIn, signUp as supabaseSignU
 /* ═══════════════════════════════════════════
    PERSISTENT STORAGE
    ═══════════════════════════════════════════ */
-const SK = 'tt-app-v3';
+const SK = 'tt-app-v4';
 function loadStore() {
   try { const s = localStorage.getItem(SK); return s ? JSON.parse(s) : null; } catch { return null; }
 }
@@ -53,6 +53,9 @@ const icons = {
   acct: I(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>),
   mail: I(<><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></>),
   doc: I(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>),
+  receipt: I(<><path d="M3 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2-3-2z"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="17" x2="13" y2="17"/></>),
+  upload: I(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>),
+  check: I(<polyline points="20 6 9 17 4 12"/>,16,2.5),
   x: I(<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,14,2),
 };
 
@@ -128,19 +131,23 @@ function AppShell({page,children}) {
     ...data.workOrders.filter(w=>!w.contractor_id&&w.stage<9).slice(0,3).map(w=>({id:w.id,icon:"👷",text:`Unassigned: ${w.title}`,sub:"Needs contractor",page:"workorders"})),
   ].slice(0,8);
 
+  const pendingExpenses=(data.expenses||[]).filter(e=>e.status==="pending").length;
+  const myContractorExpenses=(data.expenses||[]).filter(e=>e.contractor_id===user.id).length;
+  const myOwnerExpenses=(()=>{const ids=data.properties.filter(p=>p.owner_id===user.id).map(p=>p.id);return (data.expenses||[]).filter(e=>ids.includes(e.property_id)).length;})();
+
   const NAV = {
     manager:[
       {g:"Overview",items:[{i:icons.dash,l:"Dashboard",p:"dashboard"},{i:icons.prop,l:"Properties",p:"properties",c:data.properties.filter(p=>p.manager_id===user.id).length},{i:icons.wo,l:"Work Orders",p:"workorders",c:openWOs,u:true},{i:icons.cal,l:"Calendar",p:"calendar"}]},
-      {g:"Operations",items:[{i:icons.users,l:"Contractors",p:"contractors"},{i:icons.user,l:"Tenants",p:"tenants"}]},
+      {g:"Operations",items:[{i:icons.users,l:"Contractors",p:"contractors"},{i:icons.user,l:"Tenants",p:"tenants"},{i:icons.receipt,l:"Expenses",p:"expenses",c:pendingExpenses,u:!!pendingExpenses}]},
       {g:"Insights",items:[{i:icons.report,l:"Reports",p:"reports"},{i:icons.pay,l:"Financials",p:"financials"}]},
     ],
     owner:[
       {g:"Overview",items:[{i:icons.dash,l:"Dashboard",p:"dashboard"},{i:icons.prop,l:"My Properties",p:"properties",c:data.properties.filter(p=>p.owner_id===user.id).length},{i:icons.wo,l:"Work Orders",p:"workorders"},{i:icons.cal,l:"Calendar",p:"calendar"}]},
-      {g:"Management",items:[{i:icons.users,l:"Contractors",p:"contractors"},{i:icons.user,l:"Tenants",p:"tenants"},{i:icons.report,l:"Reports",p:"reports"},{i:icons.pay,l:"Financials",p:"financials"}]},
+      {g:"Management",items:[{i:icons.users,l:"Contractors",p:"contractors"},{i:icons.user,l:"Tenants",p:"tenants"},{i:icons.receipt,l:"Expenses",p:"expenses",c:myOwnerExpenses},{i:icons.report,l:"Reports",p:"reports"},{i:icons.pay,l:"Financials",p:"financials"}]},
     ],
     contractor:[
       {g:"Work",items:[{i:icons.dash,l:"Dashboard",p:"dashboard"},{i:icons.wo,l:"Available Jobs",p:"workorders",c:data.workOrders.filter(w=>(!w.contractor_id||w.contractor_id===user.id)&&w.stage<9).length},{i:icons.cal,l:"Calendar",p:"calendar"}]},
-      {g:"Business",items:[{i:icons.report,l:"My Reviews",p:"reports"}]},
+      {g:"Business",items:[{i:icons.receipt,l:"My Expenses",p:"expenses",c:myContractorExpenses},{i:icons.report,l:"My Reviews",p:"reports"}]},
     ],
     tenant:[
       {g:"My Home",items:[{i:icons.dash,l:"Dashboard",p:"dashboard"},{i:icons.wo,l:"My Requests",p:"workorders",c:data.workOrders.filter(w=>w.submitted_by===user.id&&w.stage<9).length,u:true},{i:icons.cal,l:"Calendar",p:"calendar"}]},
@@ -394,6 +401,15 @@ function Dashboard() {
   const pendingPay=data.payments.filter(p=>p.status!=="paid"&&p.status!=="cancelled");
   const occupied=myProps.filter(p=>p.status==="occupied").length;
 
+  // Expense data (Module 5)
+  const allExpenses=data.expenses||[];
+  const myExpenses=activeRole==="contractor"?allExpenses.filter(e=>e.contractor_id===user.id):activeRole==="owner"?allExpenses.filter(e=>myProps.some(p=>p.id===e.property_id)):allExpenses;
+  const totalSpend=myExpenses.reduce((s,e)=>s+(+e.amount||0),0);
+  const pendingSpend=myExpenses.filter(e=>e.status==="pending").reduce((s,e)=>s+(+e.amount||0),0);
+  const approvedSpend=myExpenses.filter(e=>e.status==="approved").reduce((s,e)=>s+(+e.amount||0),0);
+  // Spend per property (top 3)
+  const spendByProp=myProps.map(p=>({prop:p,total:allExpenses.filter(e=>e.property_id===p.id).reduce((s,e)=>s+(+e.amount||0),0)})).filter(x=>x.total>0).sort((a,b)=>b.total-a.total).slice(0,3);
+
   return <AppShell page="dashboard">
     <div className="page-header"><div><div className="page-title">Your <em>{activeRole==="contractor"?"Jobs":activeRole==="tenant"?"Home":"Properties"}</em></div><div className="page-sub">{activeRole==="manager"?"Overview of managed properties and open work orders":activeRole==="owner"?"A snapshot of your portfolio":activeRole==="contractor"?"Available work orders and your schedule":"Manage maintenance requests"}</div></div></div>
 
@@ -446,6 +462,40 @@ function Dashboard() {
             <strong style={{color:s.count?s.color:"var(--sand-dark)"}}>{s.count}</strong>
           </div>)}
         </div>
+      </div>
+    </div>}
+
+    {/* ═══ EXPENSES OVERVIEW (Module 5) ═══ */}
+    {activeRole!=="tenant"&&myExpenses.length>0&&<div className="panel" style={{marginBottom:24}}>
+      <div className="panel-header"><div className="panel-title">Expense <em>Overview</em></div><span className="panel-action" onClick={()=>navigate("expenses")}>View all →</span></div>
+      <div style={{padding:"20px 24px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:16,marginBottom:16}}>
+          <div style={{padding:"14px 16px",background:"var(--forest-mist)",borderRadius:12}}>
+            <div style={{fontSize:11,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Total Spend</div>
+            <div style={{fontFamily:"var(--font-display)",fontSize:24,fontWeight:700,color:"var(--forest)"}}>${totalSpend.toFixed(2)}</div>
+            <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2}}>{myExpenses.length} record{myExpenses.length===1?"":"s"}</div>
+          </div>
+          <div style={{padding:"14px 16px",background:"var(--warning-bg)",borderRadius:12}}>
+            <div style={{fontSize:11,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Pending Review</div>
+            <div style={{fontFamily:"var(--font-display)",fontSize:24,fontWeight:700,color:"var(--warning)"}}>${pendingSpend.toFixed(2)}</div>
+            <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2}}>{myExpenses.filter(e=>e.status==="pending").length} awaiting approval</div>
+          </div>
+          <div style={{padding:"14px 16px",background:"var(--success-bg)",borderRadius:12}}>
+            <div style={{fontSize:11,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Approved</div>
+            <div style={{fontFamily:"var(--font-display)",fontSize:24,fontWeight:700,color:"var(--success)"}}>${approvedSpend.toFixed(2)}</div>
+            <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2}}>{myExpenses.filter(e=>e.status==="approved").length} approved</div>
+          </div>
+        </div>
+        {spendByProp.length>0&&<div style={{borderTop:"1px solid rgba(0,83,87,.08)",paddingTop:16}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:".08em",textTransform:"uppercase",color:"var(--text-muted)",marginBottom:10}}>Top Spending Properties</div>
+          {spendByProp.map(({prop,total})=>{const pct=Math.round(total/totalSpend*100);return <div key={prop.id} style={{display:"flex",alignItems:"center",gap:12,padding:"6px 0"}}>
+            <div className="prop-thumb" style={{width:32,height:32,fontSize:16,background:"var(--forest-mist)"}}>{prop.emoji||"🏠"}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}><span style={{fontWeight:500}}>{prop.address}</span><strong>${total.toFixed(2)}</strong></div>
+              <div style={{height:6,background:"var(--sand)",borderRadius:6,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:"var(--forest)",borderRadius:6,transition:"width .4s"}}/></div>
+            </div>
+          </div>;})}
+        </div>}
       </div>
     </div>}
 
@@ -612,9 +662,36 @@ function PropertiesPage() {
    WORK ORDERS PAGE (9-stage lifecycle)
    ═══════════════════════════════════════════ */
 function WorkOrdersPage() {
-  const {user,activeRole,data,navigate,toast,createWorkOrder,setWorkOrderStage,assignContractor}=useApp();
+  const {user,activeRole,data,navigate,toast,createWorkOrder,setWorkOrderStage,assignContractor,createExpense,setExpenseStatus,deleteExpense}=useApp();
   const [filter,setFilter]=useState("active"); const [search,setSearch]=useState(""); const [showNew,setShowNew]=useState(false); const [detail,setDetail]=useState(null);
   const [nf,setNf]=useState({title:"",property_id:"",category:"general",priority:"normal",notes:"",timing:"immediate",contractor_id:""});
+  const [showExpense,setShowExpense]=useState(false);
+  const [expenseForm,setExpenseForm]=useState({amount:"",description:"",payment_type:"company_card",receipt_url:null,receipt_name:null});
+  const [previewReceipt,setPreviewReceipt]=useState(null);
+
+  const onReceiptFile=(e)=>{
+    const file=e.target.files?.[0]; if(!file) return;
+    if(file.size>2*1024*1024){ toast('File too large (max 2MB).'); return; }
+    const reader=new FileReader();
+    reader.onload=ev=>setExpenseForm(f=>({...f,receipt_url:ev.target.result,receipt_name:file.name}));
+    reader.readAsDataURL(file);
+  };
+  const submitExpense=async()=>{
+    if(!expenseForm.amount||!expenseForm.description.trim()||!detail) return;
+    const wo=data.workOrders.find(w=>w.id===detail); if(!wo) return;
+    await createExpense({
+      work_order_id:wo.id,
+      property_id:wo.property_id,
+      contractor_id:wo.contractor_id||user.id,
+      amount:+expenseForm.amount,
+      description:expenseForm.description.trim(),
+      payment_type:expenseForm.payment_type,
+      receipt_url:expenseForm.receipt_url,
+      receipt_name:expenseForm.receipt_name,
+    });
+    setShowExpense(false);
+    setExpenseForm({amount:"",description:"",payment_type:"company_card",receipt_url:null,receipt_name:null});
+  };
 
   const myWOs=useMemo(()=>{
     let list=activeRole==="contractor"?data.workOrders.filter(w=>w.contractor_id===user.id||(!w.contractor_id&&w.stage<=2)):activeRole==="tenant"?data.workOrders.filter(w=>w.submitted_by===user.id):data.workOrders;
@@ -717,8 +794,74 @@ function WorkOrdersPage() {
           {/* Advance button */}
           <button className="btn-sm primary" disabled={advancing} onClick={()=>advanceStage(dwo.id)}>{advancing?"Saving…":getStage(dwo.stage).action || "Advance"} →</button>
         </div>}
+
+        {/* ═══ EXPENSES SECTION (Module 4) ═══ */}
+        {(()=>{
+          const woExpenses=(data.expenses||[]).filter(ex=>ex.work_order_id===dwo.id);
+          const totalCost=woExpenses.reduce((s,ex)=>s+(+ex.amount||0),0);
+          const approvedCost=woExpenses.filter(ex=>ex.status==="approved").reduce((s,ex)=>s+(+ex.amount||0),0);
+          const canLog=activeRole==="contractor"||activeRole==="manager";
+          return <div style={{marginTop:24}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div className="sec-label" style={{margin:0}}>Expenses & Receipts</div>
+              {canLog&&<button className="btn-sm primary" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setShowExpense(true)}>{icons.plus} Log Expense</button>}
+            </div>
+            {woExpenses.length>0&&<div style={{background:"var(--forest-mist)",borderRadius:12,padding:"12px 14px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Total Cost</div>
+                <div style={{fontFamily:"var(--font-display)",fontSize:22,fontWeight:700,color:"var(--forest)"}}>${totalCost.toFixed(2)}</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:11,color:"var(--text-muted)"}}>{woExpenses.length} expense{woExpenses.length===1?"":"s"}</div>
+                <div style={{fontSize:12,color:"var(--success)",fontWeight:600}}>${approvedCost.toFixed(2)} approved</div>
+              </div>
+            </div>}
+            {woExpenses.length===0&&<div style={{padding:"20px 16px",textAlign:"center",background:"var(--beige)",borderRadius:12,fontSize:13,color:"var(--text-muted)"}}>No expenses logged yet</div>}
+            {woExpenses.map(ex=><div key={ex.id} className="expense-row">
+              <div className="expense-icon">{ex.payment_type==="company_card"?"💳":"💵"}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600,color:"var(--text-body)"}}>{ex.description}</div>
+                <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2}}>
+                  {ex.payment_type==="company_card"?"Company Card":"Personal"} · {new Date(ex.created_at).toLocaleDateString()}
+                  {ex.receipt_url&&<span style={{marginLeft:6,color:"var(--forest)",cursor:"pointer",fontWeight:600}} onClick={()=>setPreviewReceipt(ex)}> · 📎 Receipt</span>}
+                </div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{fontFamily:"var(--font-display)",fontSize:16,fontWeight:700}}>${(+ex.amount).toFixed(2)}</div>
+                <Badge c={ex.status==="approved"?"b-green":"b-amber"}>{ex.status}</Badge>
+              </div>
+              {activeRole==="manager"&&ex.status==="pending"&&<button className="btn-sm" style={{background:"var(--success)",color:"white",padding:"5px 10px",fontSize:11,marginLeft:8}} onClick={()=>setExpenseStatus(ex.id,'approved')}>{icons.check}</button>}
+            </div>)}
+          </div>;
+        })()}
       </div>
     </SlidePanel>}
+
+    {/* Expense logging modal */}
+    {showExpense&&<Modal title="Log <em>Expense</em>" sub="Record a job-related expense" onClose={()=>setShowExpense(false)}>
+      <Field label="Amount ($)"><input className="fi no-icon" type="number" step="0.01" value={expenseForm.amount} onChange={e=>setExpenseForm({...expenseForm,amount:e.target.value})} placeholder="45.50"/></Field>
+      <Field label="Description"><textarea className="fi no-icon ta" value={expenseForm.description} onChange={e=>setExpenseForm({...expenseForm,description:e.target.value})} placeholder="What was purchased or paid for"/></Field>
+      <Field label="Payment Type"><select className="fi no-icon sel" value={expenseForm.payment_type} onChange={e=>setExpenseForm({...expenseForm,payment_type:e.target.value})}><option value="company_card">Company Card</option><option value="personal">Personal Funds</option></select></Field>
+      <Field label="Receipt (optional)" sub="Upload an image or PDF — max 2MB">
+        <div className="receipt-uploader">
+          {!expenseForm.receipt_url&&<label className="receipt-pick"><input type="file" accept="image/*,.pdf" onChange={onReceiptFile} style={{display:"none"}}/><span style={{display:"flex",alignItems:"center",gap:8,color:"var(--forest)",fontSize:13,fontWeight:500,cursor:"pointer"}}>{icons.upload} Choose receipt file</span></label>}
+          {expenseForm.receipt_url&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"var(--forest-mist)",borderRadius:10}}>
+            <span style={{fontSize:18}}>📎</span>
+            <span style={{flex:1,fontSize:12,color:"var(--text-body)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{expenseForm.receipt_name}</span>
+            <button className="btn-sm ghost" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setExpenseForm({...expenseForm,receipt_url:null,receipt_name:null})}>Remove</button>
+          </div>}
+        </div>
+      </Field>
+      <button className="btn-primary" style={{marginTop:12}} onClick={submitExpense}>Log Expense</button>
+    </Modal>}
+
+    {/* Receipt preview */}
+    {previewReceipt&&<Modal title="Receipt <em>Preview</em>" sub={previewReceipt.description} onClose={()=>setPreviewReceipt(null)} wide>
+      <div style={{textAlign:"center"}}>
+        {previewReceipt.receipt_url?(previewReceipt.receipt_url.startsWith("data:image")?<img src={previewReceipt.receipt_url} alt="receipt" style={{maxWidth:"100%",maxHeight:"60vh",borderRadius:12}}/>:<div style={{padding:48,background:"var(--beige)",borderRadius:12}}><div style={{fontSize:48,marginBottom:12}}>📄</div><div style={{fontSize:14,fontWeight:600,marginBottom:6}}>{previewReceipt.receipt_name||"Receipt"}</div><a href={previewReceipt.receipt_url} download={previewReceipt.receipt_name||"receipt"} className="btn-sm primary" style={{padding:"6px 14px",fontSize:12,display:"inline-block",marginTop:8}}>Download</a></div>):<div style={{padding:48,color:"var(--text-muted)"}}>No receipt attached</div>}
+        <div style={{marginTop:16,fontSize:13,color:"var(--text-muted)"}}>Amount: <strong style={{color:"var(--text-body)"}}>${(+previewReceipt.amount).toFixed(2)}</strong></div>
+      </div>
+    </Modal>}
   </AppShell>;
 }
 
@@ -876,6 +1019,102 @@ function FinancialsPage() {
     <div className="panel"><div className="panel-header"><div className="panel-title">Payment <em>History</em></div></div>
       {data.payments.map(p=><div key={p.id} className="list-row"><div style={{flex:1}}><div className="row-title">{p.title||p.note||'Payment'}</div><div className="row-sub">{p.due_date} · {p.type}</div></div><div style={{fontFamily:"var(--font-display)",fontSize:16,fontWeight:700}}>${p.amount}</div><Badge c={p.status==="paid"?"b-green":p.status==="overdue"?"b-red":"b-amber"}>{p.status}</Badge></div>)}
     </div>
+  </AppShell>;
+}
+
+/* ═══════════════════════════════════════════
+   EXPENSES PAGE — Manager Review & Approval (Module 3)
+   ═══════════════════════════════════════════ */
+function ExpensesPage() {
+  const {user,activeRole,data,setExpenseStatus,deleteExpense,navigate}=useApp();
+  const [statusFilter,setStatusFilter]=useState("all");
+  const [propertyFilter,setPropertyFilter]=useState("all");
+  const [contractorFilter,setContractorFilter]=useState("all");
+  const [search,setSearch]=useState("");
+  const [previewReceipt,setPreviewReceipt]=useState(null);
+
+  const expenses=data.expenses||[];
+  const U=id=>data.users.find(u=>u.id===id);
+  const P=id=>data.properties.find(p=>p.id===id);
+  const W=id=>data.workOrders.find(w=>w.id===id);
+
+  // Role-scoped expense list
+  const myExpenses=useMemo(()=>{
+    let list=expenses;
+    if(activeRole==="contractor") list=list.filter(e=>e.contractor_id===user.id);
+    else if(activeRole==="owner") {
+      const myPropIds=data.properties.filter(p=>p.owner_id===user.id).map(p=>p.id);
+      list=list.filter(e=>myPropIds.includes(e.property_id));
+    }
+    if(statusFilter!=="all") list=list.filter(e=>e.status===statusFilter);
+    if(propertyFilter!=="all") list=list.filter(e=>e.property_id===propertyFilter);
+    if(contractorFilter!=="all") list=list.filter(e=>e.contractor_id===contractorFilter);
+    if(search.trim()){const s=search.toLowerCase();list=list.filter(e=>e.description.toLowerCase().includes(s)||(W(e.work_order_id)?.wo_number||"").toLowerCase().includes(s)||(P(e.property_id)?.address||"").toLowerCase().includes(s));}
+    return list.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  },[expenses,activeRole,user,statusFilter,propertyFilter,contractorFilter,search,data]);
+
+  const totals={
+    all:myExpenses.reduce((s,e)=>s+(+e.amount||0),0),
+    pending:myExpenses.filter(e=>e.status==="pending").reduce((s,e)=>s+(+e.amount||0),0),
+    approved:myExpenses.filter(e=>e.status==="approved").reduce((s,e)=>s+(+e.amount||0),0),
+  };
+  const properties=activeRole==="owner"?data.properties.filter(p=>p.owner_id===user.id):data.properties.filter(p=>p.manager_id===user.id||activeRole==="contractor");
+  const contractors=data.users.filter(u=>u.roles?.includes("contractor"));
+
+  return <AppShell page="expenses">
+    <div className="page-header"><div><div className="page-title">Track <em>Expenses</em></div><div className="page-sub">{activeRole==="contractor"?"Your logged job expenses":activeRole==="owner"?"Spending across your properties":"Review and approve maintenance spending"}</div></div></div>
+
+    <div className="stats-row" style={{gridTemplateColumns:"repeat(4,1fr)"}}>
+      <StatCard label="Total Expenses" value={`$${totals.all.toFixed(2)}`} icon="💼"/>
+      <StatCard label="Pending Review" value={`$${totals.pending.toFixed(2)}`} color={totals.pending?"var(--warning)":undefined} icon="⏳"/>
+      <StatCard label="Approved" value={`$${totals.approved.toFixed(2)}`} color="var(--success)" icon="✓"/>
+      <StatCard label="Records" value={myExpenses.length} icon="📋"/>
+    </div>
+
+    <div className="filter-bar" style={{flexWrap:"wrap",gap:8}}>
+      {[["all","All"],["pending","Pending"],["approved","Approved"]].map(([k,l])=><div key={k} className={`ftab${statusFilter===k?" active":""}`} onClick={()=>setStatusFilter(k)}>{l}</div>)}
+      <select className="filter-search" style={{padding:"8px 12px",minWidth:160}} value={propertyFilter} onChange={e=>setPropertyFilter(e.target.value)}>
+        <option value="all">All properties</option>
+        {properties.map(p=><option key={p.id} value={p.id}>{p.address}</option>)}
+      </select>
+      {activeRole!=="contractor"&&<select className="filter-search" style={{padding:"8px 12px",minWidth:160}} value={contractorFilter} onChange={e=>setContractorFilter(e.target.value)}>
+        <option value="all">All contractors</option>
+        {contractors.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>}
+      <div style={{position:"relative",marginLeft:"auto"}}><span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",opacity:.4}}>{icons.search}</span><input className="filter-search" placeholder="Search expenses…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+    </div>
+
+    <div className="panel">
+      {!myExpenses.length&&<EmptyState icon="💼" text="No expenses found" sub={activeRole==="contractor"?"Log expenses against your work orders":"Expenses will appear here as they're submitted"}/>}
+      {myExpenses.map(ex=>{
+        const wo=W(ex.work_order_id); const prop=P(ex.property_id); const con=U(ex.contractor_id);
+        return <div key={ex.id} className="list-row" style={{padding:"14px 24px"}}>
+          <div className="expense-icon" style={{width:42,height:42}}>{ex.payment_type==="company_card"?"💳":"💵"}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div className="row-title">{ex.description}</div>
+            <div className="row-sub">
+              {wo&&<span style={{color:"var(--forest)",cursor:"pointer",fontWeight:500}} onClick={()=>navigate("workorders",{detail:wo.id})}>{wo.wo_number}</span>}
+              {wo&&prop&&" · "}{prop?.address}{con&&` · ${con.name}`} · {new Date(ex.created_at).toLocaleDateString()}
+              {ex.receipt_url&&<span style={{marginLeft:6,color:"var(--forest)",cursor:"pointer",fontWeight:600}} onClick={()=>setPreviewReceipt(ex)}> · 📎 Receipt</span>}
+            </div>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700}}>${(+ex.amount).toFixed(2)}</div>
+            <div style={{fontSize:10,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:".06em"}}>{ex.payment_type==="company_card"?"Company":"Personal"}</div>
+          </div>
+          <Badge c={ex.status==="approved"?"b-green":"b-amber"}>{ex.status}</Badge>
+          {activeRole==="manager"&&ex.status==="pending"&&<button className="btn-sm" style={{background:"var(--success)",color:"white",padding:"6px 12px",fontSize:11}} onClick={()=>setExpenseStatus(ex.id,'approved')}>Approve</button>}
+          {activeRole==="manager"&&ex.status==="approved"&&<button className="btn-sm ghost" style={{padding:"6px 10px",fontSize:11}} onClick={()=>setExpenseStatus(ex.id,'pending')}>Revert</button>}
+        </div>;
+      })}
+    </div>
+
+    {previewReceipt&&<Modal title="Receipt <em>Preview</em>" sub={previewReceipt.description} onClose={()=>setPreviewReceipt(null)} wide>
+      <div style={{textAlign:"center"}}>
+        {previewReceipt.receipt_url?(previewReceipt.receipt_url.startsWith("data:image")?<img src={previewReceipt.receipt_url} alt="receipt" style={{maxWidth:"100%",maxHeight:"60vh",borderRadius:12}}/>:<div style={{padding:48,background:"var(--beige)",borderRadius:12}}><div style={{fontSize:48,marginBottom:12}}>📄</div><div style={{fontSize:14,fontWeight:600,marginBottom:6}}>{previewReceipt.receipt_name||"Receipt"}</div><a href={previewReceipt.receipt_url} download={previewReceipt.receipt_name||"receipt"} className="btn-sm primary" style={{padding:"6px 14px",fontSize:12,display:"inline-block",marginTop:8}}>Download</a></div>):<div style={{padding:48,color:"var(--text-muted)"}}>No receipt attached</div>}
+        <div style={{marginTop:16,fontSize:13,color:"var(--text-muted)"}}>Amount: <strong style={{color:"var(--text-body)"}}>${(+previewReceipt.amount).toFixed(2)}</strong></div>
+      </div>
+    </Modal>}
   </AppShell>;
 }
 
@@ -1163,6 +1402,57 @@ export default function App() {
     return updatedLocal.find(p=>p.id===paymentId);
   }, [isRemote,data,setData,toast]);
 
+  const createExpense = useCallback(async (expense) => {
+    const id = 'exp' + (data._nextId.exp || 1);
+    const local = {
+      ...expense,
+      id,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      approved_at: null,
+      approved_by: null,
+    };
+    setData({
+      ...data,
+      expenses: [...(data.expenses || []), local],
+      _nextId: { ...data._nextId, exp: (data._nextId.exp || 1) + 1 },
+    });
+    toast('Expense logged.');
+    return local;
+  }, [data, setData, toast]);
+
+  const approveExpense = useCallback(async (expenseId) => {
+    const updated = (data.expenses || []).map(e =>
+      e.id === expenseId
+        ? { ...e, status: 'approved', approved_at: new Date().toISOString(), approved_by: user.id }
+        : e
+    );
+    setData({ ...data, expenses: updated });
+    toast('Expense approved.');
+    return updated.find(e => e.id === expenseId);
+  }, [data, setData, toast, user]);
+
+  const setExpenseStatus = useCallback(async (expenseId, status) => {
+    const updated = (data.expenses || []).map(e =>
+      e.id === expenseId
+        ? {
+            ...e,
+            status,
+            approved_at: status === 'approved' ? new Date().toISOString() : null,
+            approved_by: status === 'approved' ? user.id : null,
+          }
+        : e
+    );
+    setData({ ...data, expenses: updated });
+    toast(status === 'approved' ? 'Expense approved.' : 'Expense set to pending.');
+    return updated.find(e => e.id === expenseId);
+  }, [data, setData, toast, user]);
+
+  const deleteExpense = useCallback(async (expenseId) => {
+    setData({ ...data, expenses: (data.expenses || []).filter(e => e.id !== expenseId) });
+    toast('Expense deleted.');
+  }, [data, setData, toast]);
+
   const updateProfile = useCallback(async (profile) => {
     if (isRemote) {
       const updated = await supabaseUpdateProfile(profile.id, { name: profile.name, email: profile.email, phone: profile.phone, company_name: profile.company_name });
@@ -1176,7 +1466,7 @@ export default function App() {
 
   if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:"#005357",fontStyle:"italic"}}>TropicTask</span></div>;
 
-  const ctx={user,setUser,activeRole,setActiveRole,data,setData,navigate,toast,logout,createProperty,updateProperty:updatePropertyAction,deleteProperty:deletePropertyAction,createWorkOrder,setWorkOrderStage,assignContractor,createPayment,markPaymentPaid,updateProfile,isRemote,params:pageParams.current};
+  const ctx={user,setUser,activeRole,setActiveRole,data,setData,navigate,toast,logout,createProperty,updateProperty:updatePropertyAction,deleteProperty:deletePropertyAction,createWorkOrder,setWorkOrderStage,assignContractor,createPayment,markPaymentPaid,updateProfile,createExpense,approveExpense,setExpenseStatus,deleteExpense,isRemote,params:pageParams.current};
   const inviteType=pageParams.current?.type||"tenant";
 
   return <Ctx.Provider value={ctx}>
@@ -1193,6 +1483,7 @@ export default function App() {
     {page==="calendar"&&<CalendarPage/>}
     {page==="reports"&&<ReportsPage/>}
     {page==="financials"&&<FinancialsPage/>}
+    {page==="expenses"&&<ExpensesPage/>}
     {page==="account"&&<AccountPage/>}
     {page==="invite"&&<InvitePage type={inviteType}/>}
     {page==="documents"&&<AppShell page="documents"><div className="page-header"><div><div className="page-title"><em>Documents</em></div><div className="page-sub">Files shared by your property manager</div></div></div><div className="panel"><div className="panel-header"><div className="panel-title">My <em>Files</em></div><span className="badge b-forest">{4} documents</span></div>{[{n:"Lease Agreement",s:"142 KB",i:"📄",date:"Mar 1, 2025",type:"PDF"},{n:"Move-in Inspection Report",s:"88 KB",i:"📋",date:"Mar 5, 2025",type:"PDF"},{n:"Community Rules & Regulations",s:"54 KB",i:"📜",date:"Jan 15, 2025",type:"PDF"},{n:"Key & Access Code Info",s:"12 KB",i:"🔑",date:"Mar 1, 2025",type:"TXT"}].map(d=><div key={d.n} className="list-row"><span style={{fontSize:20}}>{d.i}</span><div style={{flex:1}}><div className="row-title">{d.n}</div><div className="row-sub">{d.type} · {d.s} · Shared {d.date}</div></div><button className="btn-sm ghost" style={{padding:"5px 12px",fontSize:11}} onClick={()=>ctx.toast(`"${d.n}" download started`)}>Download</button></div>)}</div></AppShell>}

@@ -55,5 +55,13 @@ export const SEED_DATA = {
 
   invites: [],
 
-  _nextId: { u: 8, p: 6, wo: 9, pay: 7, r: 3, c: 4, inv: 1 }
+  expenses: [
+    { id: 'exp1', work_order_id: 'wo3', property_id: 'p2', contractor_id: 'u3', amount: 45.50, description: 'Replacement faucet cartridge & supply lines', payment_type: 'company_card', receipt_url: null, receipt_name: null, status: 'approved', created_at: '2025-03-26T11:30:00', approved_at: '2025-03-26T15:00:00', approved_by: 'u1' },
+    { id: 'exp2', work_order_id: 'wo3', property_id: 'p2', contractor_id: 'u3', amount: 28.00, description: 'Plumber\'s putty and pipe sealant', payment_type: 'personal', receipt_url: null, receipt_name: null, status: 'pending', created_at: '2025-03-26T12:00:00', approved_at: null, approved_by: null },
+    { id: 'exp3', work_order_id: 'wo7', property_id: 'p4', contractor_id: 'u3', amount: 320.00, description: 'Water heater diagnostic + thermostat replacement', payment_type: 'company_card', receipt_url: null, receipt_name: null, status: 'approved', created_at: '2025-03-09T14:30:00', approved_at: '2025-03-10T09:15:00', approved_by: 'u1' },
+    { id: 'exp4', work_order_id: 'wo6', property_id: 'p1', contractor_id: 'u6', amount: 125.00, description: 'Annual electrical safety inspection — service call', payment_type: 'company_card', receipt_url: null, receipt_name: null, status: 'pending', created_at: '2025-03-28T10:00:00', approved_at: null, approved_by: null },
+    { id: 'exp5', work_order_id: 'wo8', property_id: 'p2', contractor_id: 'u3', amount: 18.75, description: 'Drain snake rental + cleaner', payment_type: 'personal', receipt_url: null, receipt_name: null, status: 'approved', created_at: '2025-02-21T11:00:00', approved_at: '2025-02-22T08:30:00', approved_by: 'u1' },
+  ],
+
+  _nextId: { u: 8, p: 6, wo: 9, pay: 7, r: 3, c: 4, inv: 1, exp: 6 }
 }

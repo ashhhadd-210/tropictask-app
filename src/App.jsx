@@ -1018,12 +1018,14 @@ function WorkOrdersPage() {
       <Field label="Amount ($)"><input className="fi no-icon" type="number" step="0.01" value={expenseForm.amount} onChange={e=>setExpenseForm({...expenseForm,amount:e.target.value})} placeholder="45.50"/></Field>
       <Field label="Description"><textarea className="fi no-icon ta" value={expenseForm.description} onChange={e=>setExpenseForm({...expenseForm,description:e.target.value})} placeholder="What was purchased or paid for"/></Field>
       <Field label="Payment Type"><select className="fi no-icon sel" value={expenseForm.payment_type} onChange={e=>setExpenseForm({...expenseForm,payment_type:e.target.value})}><option value="company_card">Company Card</option><option value="personal">Personal Funds</option></select></Field>
-      <Field label="Receipt (optional)" sub="Upload an image or PDF — max 2MB">
-        <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.heic,.pdf,image/*,application/pdf" onChange={onReceiptFile} style={{display:"none"}}/>
-        {!expenseForm.receipt_url&&<button type="button" className="receipt-uploader" onClick={()=>fileInputRef.current?.click()} style={{width:"100%",border:"1.5px dashed rgba(0,83,87,.25)",cursor:"pointer",background:"var(--beige)",padding:"18px 14px",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",gap:10,color:"var(--forest)",fontSize:13,fontWeight:500,fontFamily:"var(--font-body)"}}>{icons.upload} Click to choose receipt file</button>}
+      <Field label="Receipt (optional)" sub="JPG, PNG, WebP, HEIC, or PDF — max 2MB">
+        {!expenseForm.receipt_url&&<label className="receipt-uploader" style={{width:"100%",border:"1.5px dashed rgba(0,83,87,.25)",cursor:"pointer",background:"var(--beige)",padding:"22px 14px",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",gap:10,color:"var(--forest)",fontSize:13,fontWeight:500,fontFamily:"var(--font-body)",position:"relative",transition:"all .2s"}}>
+          <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.pdf,image/*,application/pdf" capture="environment" onChange={onReceiptFile} style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}}/>
+          <span style={{display:"flex",alignItems:"center",gap:10,pointerEvents:"none"}}>{icons.upload} <span>Choose receipt — image or PDF</span></span>
+        </label>}
         {expenseForm.receipt_url&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"var(--forest-mist)",borderRadius:12}}>
-          {expenseForm.receipt_url.startsWith("data:image")?<img src={expenseForm.receipt_url} alt="" style={{width:36,height:36,borderRadius:6,objectFit:"cover"}}/>:<span style={{fontSize:22}}>📄</span>}
-          <span style={{flex:1,fontSize:12,color:"var(--text-body)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{expenseForm.receipt_name}</span>
+          {expenseForm.receipt_url.startsWith("data:image")?<img src={expenseForm.receipt_url} alt="" style={{width:40,height:40,borderRadius:8,objectFit:"cover",border:"1px solid rgba(0,83,87,.1)"}}/>:<span style={{fontSize:22}}>📄</span>}
+          <span style={{flex:1,fontSize:12,color:"var(--text-body)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500}}>{expenseForm.receipt_name}</span>
           <button type="button" className="btn-sm ghost" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setExpenseForm({...expenseForm,receipt_url:null,receipt_name:null})}>Remove</button>
         </div>}
       </Field>

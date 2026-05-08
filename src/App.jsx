@@ -31,6 +31,37 @@ const useApp = () => useContext(Ctx);
 
 
 /* ═══════════════════════════════════════════
+   DATA INTEGRITY HELPERS (Day 30)
+   ═══════════════════════════════════════════ */
+const initials = (name) => {
+  if (!name || typeof name !== 'string') return '??';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '??';
+  return parts.slice(0,2).map(w => w[0]).join('').toUpperCase();
+};
+const firstName = (name) => {
+  if (!name || typeof name !== 'string') return 'there';
+  return name.trim().split(/\s+/)[0] || 'there';
+};
+// Normalize loaded data so missing arrays/fields can never crash a render
+const sanitizeStore = (d) => {
+  if (!d || typeof d !== 'object') return null;
+  return {
+    users: Array.isArray(d.users) ? d.users : [],
+    properties: Array.isArray(d.properties) ? d.properties : [],
+    workOrders: Array.isArray(d.workOrders) ? d.workOrders : [],
+    payments: Array.isArray(d.payments) ? d.payments : [],
+    components: Array.isArray(d.components) ? d.components : [],
+    reviews: Array.isArray(d.reviews) ? d.reviews : [],
+    invites: Array.isArray(d.invites) ? d.invites : [],
+    expenses: Array.isArray(d.expenses) ? d.expenses : [],
+    _nextId: d._nextId && typeof d._nextId === 'object'
+      ? { u:8, p:6, wo:9, pay:7, r:3, c:4, inv:1, exp:6, ...d._nextId }
+      : { u:8, p:6, wo:9, pay:7, r:3, c:4, inv:1, exp:6 },
+  };
+};
+
+/* ═══════════════════════════════════════════
    ICONS
    ═══════════════════════════════════════════ */
 const I = (d,s=16,sw=1.75) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">{d}</svg>;
@@ -117,7 +148,7 @@ function AppShell({page,children}) {
   useEffect(()=>{setMobileNavOpen(false);},[page]);
   if(!user) return null;
   const navTo=(p,params)=>{setMobileNavOpen(false);navigate(p,params);};
-  const initials = user.name.split(" ").map(w=>w[0]).join("").toUpperCase();
+  const userInitials = initials(user.name);
   const openWOs = data.workOrders.filter(w=>w.stage<9).length;
   const propCount = data.properties.filter(p=> activeRole==="owner"?p.owner_id===user.id : activeRole==="tenant"?data.users.find(u=>u.id===user.id)?.property_id===p.id : p.manager_id===user.id).length;
 
@@ -187,18 +218,19 @@ function AppShell({page,children}) {
             {notifications.map(n=><div key={n.id+n.text} className="list-row" style={{padding:"10px 16px",cursor:"pointer"}} onClick={()=>{setNotifOpen(false);navigate(n.page);}}><span style={{fontSize:16}}>{n.icon}</span><div style={{flex:1}}><div className="row-title" style={{fontSize:12}}>{n.text}</div><div className="row-sub">{n.sub}</div></div></div>)}
           </div>}
         </div>
-        <div className="topbar-user" onClick={()=>navigate("account")}><div className="topbar-avatar">{initials}</div><span className="topbar-uname">{user.name}</span></div>
+        <div className="topbar-user" onClick={()=>navigate("account")}><div className="topbar-avatar">{userInitials}</div><span className="topbar-uname">{user.name}</span></div>
       </div>
     </header>
 
     {/* ROLE BAR */}
     <div className="role-bar">
-      <div style={{display:"flex",alignItems:"center",gap:6}}>
-        {user.roles.map(r=>(
-          <div key={r} className={`role-tab${activeRole===r?" active":""}`} onClick={()=>setActiveRole(r)}>{roleIcons[r]} {roleLabels[r]}</div>
-        ))}
+      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+        {(user.roles||[]).length>1
+          ? user.roles.map(r=>(<div key={r} className={`role-tab${activeRole===r?" active":""}`} onClick={()=>setActiveRole(r)}>{roleIcons[r]} {roleLabels[r]}</div>))
+          : <div className="role-tab active">{roleIcons[activeRole]} {roleLabels[activeRole]}</div>
+        }
       </div>
-      <div className="role-bar-greet">{greet}, <em>{user.name.split(" ")[0]}</em></div>
+      <div className="role-bar-greet">{greet}, <em>{firstName(user.name)}</em></div>
     </div>
 
     {/* SIDENAV */}
@@ -418,9 +450,14 @@ function Dashboard() {
     const pendingSpend=myExpenses.filter(e=>e.status==="pending").reduce((s,e)=>s+(+e.amount||0),0);
     const approvedSpend=myExpenses.filter(e=>e.status==="approved").reduce((s,e)=>s+(+e.amount||0),0);
     const spendByProp=myProps.map(p=>({prop:p,total:allExpenses.filter(e=>e.property_id===p.id).reduce((s,e)=>s+(+e.amount||0),0)})).filter(x=>x.total>0).sort((a,b)=>b.total-a.total).slice(0,3);
-    return {myExpenses,totalSpend,pendingSpend,approvedSpend,spendByProp};
-  },[data.expenses,activeRole,user,myProps]);
-  const {myExpenses,totalSpend,pendingSpend,approvedSpend,spendByProp}=expenseStats;
+    // Spend by contractor
+    const contractorIds=[...new Set(myExpenses.map(e=>e.contractor_id).filter(Boolean))];
+    const spendByContractor=contractorIds.map(cid=>{const c=data.users.find(u=>u.id===cid);return {contractor:c,total:myExpenses.filter(e=>e.contractor_id===cid).reduce((s,e)=>s+(+e.amount||0),0)};}).filter(x=>x.contractor&&x.total>0).sort((a,b)=>b.total-a.total).slice(0,3);
+    // Approval rate
+    const approvalRate=myExpenses.length?Math.round((myExpenses.filter(e=>e.status==="approved").length/myExpenses.length)*100):0;
+    return {myExpenses,totalSpend,pendingSpend,approvedSpend,spendByProp,spendByContractor,approvalRate};
+  },[data.expenses,activeRole,user,myProps,data.users]);
+  const {myExpenses,totalSpend,pendingSpend,approvedSpend,spendByProp,spendByContractor,approvalRate}=expenseStats;
 
   return <AppShell page="dashboard">
     <div className="page-header"><div><div className="page-title">Your <em>{activeRole==="contractor"?"Jobs":activeRole==="tenant"?"Home":"Properties"}</em></div><div className="page-sub">{activeRole==="manager"?"Overview of managed properties and open work orders":activeRole==="owner"?"A snapshot of your portfolio":activeRole==="contractor"?"Available work orders and your schedule":"Manage maintenance requests"}</div></div></div>
@@ -498,15 +535,38 @@ function Dashboard() {
             <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2}}>{myExpenses.filter(e=>e.status==="approved").length} approved</div>
           </div>
         </div>
-        {spendByProp.length>0&&<div style={{borderTop:"1px solid rgba(0,83,87,.08)",paddingTop:16}}>
-          <div style={{fontSize:11,fontWeight:700,letterSpacing:".08em",textTransform:"uppercase",color:"var(--text-muted)",marginBottom:10}}>Top Spending Properties</div>
-          {spendByProp.map(({prop,total})=>{const pct=Math.round(total/totalSpend*100);return <div key={prop.id} style={{display:"flex",alignItems:"center",gap:12,padding:"6px 0"}}>
-            <div className="prop-thumb" style={{width:32,height:32,fontSize:16,background:"var(--forest-mist)"}}>{prop.emoji||"🏠"}</div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}><span style={{fontWeight:500}}>{prop.address}</span><strong>${total.toFixed(2)}</strong></div>
-              <div style={{height:6,background:"var(--sand)",borderRadius:6,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:"var(--forest)",borderRadius:6,transition:"width .4s"}}/></div>
+        {(spendByProp.length>0||spendByContractor.length>0)&&<div className="breakdown-grid" style={{borderTop:"1px solid rgba(0,83,87,.08)",paddingTop:16}}>
+          {spendByProp.length>0&&<div>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:".08em",textTransform:"uppercase",color:"var(--text-muted)",marginBottom:10}}>Top Spending Properties</div>
+            {spendByProp.map(({prop,total})=>{const pct=Math.round(total/(spendByProp[0].total||1)*100);return <div key={prop.id} style={{display:"flex",alignItems:"center",gap:12,padding:"6px 0"}}>
+              <div className="prop-thumb" style={{width:30,height:30,fontSize:15,background:"var(--forest-mist)"}}>{prop.emoji||"🏠"}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4,gap:8}}><span style={{fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{prop.address}</span><strong style={{flexShrink:0}}>${total.toFixed(0)}</strong></div>
+                <div style={{height:5,background:"var(--sand)",borderRadius:5,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:"var(--forest)",borderRadius:5,transition:"width .4s"}}/></div>
+              </div>
+            </div>;})}
+          </div>}
+          {spendByContractor.length>0&&<div>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:".08em",textTransform:"uppercase",color:"var(--text-muted)",marginBottom:10}}>Top Contractors by Spend</div>
+            {spendByContractor.map(({contractor,total})=>{const pct=Math.round(total/(spendByContractor[0].total||1)*100);return <div key={contractor.id} style={{display:"flex",alignItems:"center",gap:12,padding:"6px 0"}}>
+              <div className="avatar-sm" style={{width:30,height:30,fontSize:11}}>{initials(contractor.name)}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4,gap:8}}><span style={{fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{contractor.name}{contractor.trade?` · ${contractor.trade}`:""}</span><strong style={{flexShrink:0}}>${total.toFixed(0)}</strong></div>
+                <div style={{height:5,background:"var(--sand)",borderRadius:5,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:"#1a6b7a",borderRadius:5,transition:"width .4s"}}/></div>
+              </div>
+            </div>;})}
+          </div>}
+        </div>}
+        {/* Approval rate strip */}
+        {myExpenses.length>0&&activeRole==="manager"&&<div style={{marginTop:16,padding:"12px 14px",background:"var(--beige)",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:42,height:42,borderRadius:"50%",background:approvalRate>=70?"var(--success-bg)":"var(--warning-bg)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:14,fontWeight:700,color:approvalRate>=70?"var(--success)":"var(--warning)"}}>{approvalRate}%</div>
+            <div>
+              <div style={{fontSize:13,fontWeight:600}}>Approval Rate</div>
+              <div style={{fontSize:11,color:"var(--text-muted)"}}>{myExpenses.filter(e=>e.status==="approved").length} of {myExpenses.length} expenses approved</div>
             </div>
-          </div>;})}
+          </div>
+          {myExpenses.filter(e=>e.status==="pending").length>0&&<button className="btn-sm primary" style={{padding:"6px 12px",fontSize:12}} onClick={()=>navigate("expenses")}>Review {myExpenses.filter(e=>e.status==="pending").length} pending →</button>}
         </div>}
       </div>
     </div>}
@@ -606,7 +666,7 @@ function PropertiesPage() {
         return <div key={p.id} className="prop-row-card" onClick={()=>setDetail(p.id)}>
           <div className="prc-thumb">{p.emoji||"🏠"}</div>
           <div className={`prc-stripe ${p.status==="occupied"?"s-green":"s-grey"}`}/>
-          <div className="prc-body"><div className="prc-main"><div className="row-title">{p.address}</div><div className="row-sub">{p.city}, {p.state} {p.zip} · {p.beds}bd/{p.baths}ba</div>{owner&&<div className="prc-owner"><div className="prc-owner-av">{owner.name.split(" ").map(w=>w[0]).join("")}</div><span>{owner.name}</span></div>}</div></div>
+          <div className="prc-body"><div className="prc-main"><div className="row-title">{p.address}</div><div className="row-sub">{p.city}, {p.state} {p.zip} · {p.beds}bd/{p.baths}ba</div>{owner&&<div className="prc-owner"><div className="prc-owner-av">{initials(owner.name)}</div><span>{owner.name}</span></div>}</div></div>
           <div className="prc-right"><div className="prc-wo"><div className="prc-wo-val" style={{color:wos?"var(--warning)":"var(--sand-dark)"}}>{wos}</div><div className="prc-wo-lbl">Open WOs</div></div><Badge c={p.status==="occupied"?"b-green":"b-grey"}>{p.status==="occupied"?"Occupied":"Vacant"}</Badge>{icons.chev}</div>
         </div>;
       })}
@@ -745,17 +805,43 @@ function WorkOrdersPage() {
   const [previewReceipt,setPreviewReceipt]=useState(null);
 
   const fileInputRef=useRef(null);
+  const ALLOWED_RECEIPT_TYPES = ["image/jpeg","image/jpg","image/png","image/webp","image/gif","image/heic","application/pdf"];
+  const ALLOWED_RECEIPT_EXTS = /\.(jpe?g|png|webp|gif|heic|pdf)$/i;
+  const MAX_RECEIPT_BYTES = 2 * 1024 * 1024;
   const onReceiptFile=(e)=>{
-    const file=e.target.files?.[0]; if(!file) return;
-    if(file.size>2*1024*1024){ toast('File too large (max 2MB).'); e.target.value=""; return; }
+    const file=e.target.files?.[0];
+    e.target.value=""; // always reset so re-selecting the same file works
+    if(!file) return;
+    // MIME type + extension check (some browsers don't set MIME for HEIC, etc.)
+    const mimeOk = ALLOWED_RECEIPT_TYPES.includes((file.type||"").toLowerCase());
+    const extOk = ALLOWED_RECEIPT_EXTS.test(file.name||"");
+    if(!mimeOk && !extOk){
+      toast('Unsupported format. Use JPG, PNG, WebP, HEIC, or PDF.');
+      return;
+    }
+    if(file.size===0){
+      toast('That file is empty.');
+      return;
+    }
+    if(file.size>MAX_RECEIPT_BYTES){
+      const sizeMB=(file.size/1024/1024).toFixed(1);
+      toast(`File too large (${sizeMB}MB). Max is 2MB.`);
+      return;
+    }
     const reader=new FileReader();
     reader.onload=ev=>{
-      setExpenseForm(f=>({...f,receipt_url:ev.target.result,receipt_name:file.name}));
+      const url=ev.target?.result;
+      if(typeof url!=="string"||!url.startsWith("data:")){
+        toast('Could not process file. Try another image.');
+        return;
+      }
+      setExpenseForm(f=>({...f,receipt_url:url,receipt_name:file.name}));
       toast('Receipt attached.');
     };
-    reader.onerror=()=>toast('Could not read file.');
-    reader.readAsDataURL(file);
-    e.target.value="";
+    reader.onerror=()=>toast('Could not read file. Try again.');
+    reader.onabort=()=>toast('Upload was cancelled.');
+    try { reader.readAsDataURL(file); }
+    catch { toast('Browser blocked file read.'); }
   };
   const submitExpense=async()=>{
     if(!expenseForm.amount||!expenseForm.description.trim()||!detail) return;
@@ -924,7 +1010,7 @@ function WorkOrdersPage() {
       <Field label="Description"><textarea className="fi no-icon ta" value={expenseForm.description} onChange={e=>setExpenseForm({...expenseForm,description:e.target.value})} placeholder="What was purchased or paid for"/></Field>
       <Field label="Payment Type"><select className="fi no-icon sel" value={expenseForm.payment_type} onChange={e=>setExpenseForm({...expenseForm,payment_type:e.target.value})}><option value="company_card">Company Card</option><option value="personal">Personal Funds</option></select></Field>
       <Field label="Receipt (optional)" sub="Upload an image or PDF — max 2MB">
-        <input ref={fileInputRef} type="file" accept="image/*,application/pdf" onChange={onReceiptFile} style={{display:"none"}}/>
+        <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.heic,.pdf,image/*,application/pdf" onChange={onReceiptFile} style={{display:"none"}}/>
         {!expenseForm.receipt_url&&<button type="button" className="receipt-uploader" onClick={()=>fileInputRef.current?.click()} style={{width:"100%",border:"1.5px dashed rgba(0,83,87,.25)",cursor:"pointer",background:"var(--beige)",padding:"18px 14px",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",gap:10,color:"var(--forest)",fontSize:13,fontWeight:500,fontFamily:"var(--font-body)"}}>{icons.upload} Click to choose receipt file</button>}
         {expenseForm.receipt_url&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"var(--forest-mist)",borderRadius:12}}>
           {expenseForm.receipt_url.startsWith("data:image")?<img src={expenseForm.receipt_url} alt="" style={{width:36,height:36,borderRadius:6,objectFit:"cover"}}/>:<span style={{fontSize:22}}>📄</span>}
@@ -1020,7 +1106,7 @@ function PeoplePage({type}) {
   return <AppShell page={type+"s"}>
     <div className="page-header"><div><div className="page-title"><em>{title}</em></div><div className="page-sub">{people.length} {title.toLowerCase()}</div></div></div>
     <div className="panel">{people.map(p=><div key={p.id} className="list-row" onClick={()=>setDetail(p.id)}>
-      <div className="avatar-sm">{p.name.split(" ").map(w=>w[0]).join("")}</div>
+      <div className="avatar-sm">{initials(p.name)}</div>
       <div style={{flex:1}}><div className="row-title">{p.name}</div><div className="row-sub">{p.email}{p.company_name?` · ${p.company_name}`:""}{p.trade?` · ${p.trade}`:""}</div></div>
       {type==="contractor"&&<div style={{display:"flex",alignItems:"center",gap:4}}>{icons.star}<span style={{fontSize:13,fontWeight:600}}>{(data.reviews.filter(r=>r.contractor_id===p.id).reduce((s,r)=>s+r.stars,0)/(data.reviews.filter(r=>r.contractor_id===p.id).length||1)).toFixed(1)}</span></div>}
       {type==="tenant"&&<Badge c="b-forest">{data.properties.find(pr=>pr.id===p.property_id)?.address||"No unit"}</Badge>}
@@ -1043,7 +1129,7 @@ function PeoplePage({type}) {
       return <SlidePanel title={`<em>${dp.name}</em>`} sub={dp.roles.join(", ")} onClose={()=>setDetail(null)}>
         <div style={{padding:24}}>
           <div style={{textAlign:"center",marginBottom:24}}>
-            <div style={{width:72,height:72,borderRadius:"50%",background:"linear-gradient(135deg,var(--forest-dark),var(--forest))",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:24,fontWeight:700,color:"white",margin:"0 auto 12px",boxShadow:"0 8px 24px rgba(0,83,87,.18)"}}>{dp.name.split(" ").map(w=>w[0]).join("")}</div>
+            <div style={{width:72,height:72,borderRadius:"50%",background:"linear-gradient(135deg,var(--forest-dark),var(--forest))",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:24,fontWeight:700,color:"white",margin:"0 auto 12px",boxShadow:"0 8px 24px rgba(0,83,87,.18)"}}>{initials(dp.name)}</div>
             <div style={{fontSize:20,fontWeight:700,fontFamily:"var(--font-display)"}}>{dp.name}</div>
             {dp.company_name&&<div style={{fontSize:13,color:"var(--text-muted)",marginTop:2}}>{dp.company_name}</div>}
             {type==="contractor"&&reviews.length>0&&<div style={{display:"inline-flex",alignItems:"center",gap:4,marginTop:8,padding:"4px 12px",background:"var(--warning-bg)",borderRadius:100,border:"1px solid var(--warning-border)"}}>{Array(5).fill(0).map((_,i)=><span key={i} style={{color:i<Math.round(avgRating)?"var(--warning)":"var(--sand-dark)",fontSize:13}}>★</span>)}<span style={{fontSize:12,fontWeight:700,marginLeft:4,color:"var(--warning)"}}>{avgRating.toFixed(1)}</span><span style={{fontSize:11,color:"var(--text-muted)"}}>({reviews.length})</span></div>}
@@ -1151,14 +1237,99 @@ function CalendarPage() {
    ═══════════════════════════════════════════ */
 function ReportsPage() {
   const {user,activeRole,data}=useApp();
-  const completedWOs=data.workOrders.filter(w=>w.stage>=7).length;
-  const totalWOs=data.workOrders.length;
+  const stats=useMemo(()=>{
+    const wos = activeRole==="contractor" ? data.workOrders.filter(w=>w.contractor_id===user.id) :
+                activeRole==="owner" ? data.workOrders.filter(w=>data.properties.some(p=>p.id===w.property_id&&p.owner_id===user.id)) :
+                data.workOrders;
+    const completed=wos.filter(w=>w.stage>=7);
+    const closed=wos.filter(w=>w.stage===9);
+    const open=wos.filter(w=>w.stage<7);
+    const urgent=wos.filter(w=>w.priority==="urgent"&&w.stage<9);
+    // By category
+    const byCat={};
+    wos.forEach(w=>{byCat[w.category]=(byCat[w.category]||0)+1;});
+    const categories=Object.entries(byCat).map(([cat,count])=>({cat,count})).sort((a,b)=>b.count-a.count);
+    // Top contractors by completed jobs
+    const contractorPerf=data.users.filter(u=>u.roles.includes("contractor")).map(c=>{
+      const myJobs=data.workOrders.filter(w=>w.contractor_id===c.id);
+      const myDone=myJobs.filter(w=>w.stage>=7);
+      const myReviews=data.reviews.filter(r=>r.contractor_id===c.id);
+      const avg=myReviews.length?(myReviews.reduce((s,r)=>s+r.stars,0)/myReviews.length):0;
+      return {contractor:c,total:myJobs.length,done:myDone.length,rate:myJobs.length?Math.round(myDone.length/myJobs.length*100):0,rating:avg,reviewCount:myReviews.length};
+    }).filter(c=>c.total>0).sort((a,b)=>b.done-a.done);
+    return {wos,completed,closed,open,urgent,categories,contractorPerf};
+  },[data,user,activeRole]);
+
+  const myReviews=activeRole==="contractor"?data.reviews.filter(r=>r.contractor_id===user.id):[];
+  const myAvg=myReviews.length?(myReviews.reduce((s,r)=>s+r.stars,0)/myReviews.length):0;
+  const catIcons={hvac:"❄️",plumbing:"🔧",electrical:"⚡",roofing:"🏠",appliances:"🔌",landscaping:"🌳",painting:"🎨",general:"🛠️"};
+
   return <AppShell page="reports">
-    <div className="page-header"><div><div className="page-title"><em>Reports</em></div><div className="page-sub">{activeRole==="contractor"?"Your performance and reviews":"Property and maintenance insights"}</div></div></div>
-    <div className="stats-row"><StatCard label="Total Work Orders" value={totalWOs} icon="📋"/><StatCard label="Completed" value={completedWOs} color="var(--success)" icon="✅"/><StatCard label="Completion Rate" value={totalWOs?Math.round(completedWOs/totalWOs*100)+"%":"—"} color="var(--forest)" icon="📊"/></div>
-    {activeRole==="contractor"&&<div className="panel"><div className="panel-header"><div className="panel-title">My <em>Reviews</em></div></div>
-      {data.reviews.filter(r=>r.contractor_id===user.id).map(r=><div key={r.id} className="list-row"><div style={{display:"flex",gap:2}}>{Array(5).fill(0).map((_,i)=><span key={i} style={{color:i<r.stars?"var(--warning)":"var(--sand-dark)"}}>★</span>)}</div><div style={{flex:1,fontSize:13}}>{r.text}</div><span style={{fontSize:11,color:"var(--text-muted)"}}>{r.location_label}</span></div>)}
+    <div className="page-header"><div><div className="page-title"><em>Reports</em></div><div className="page-sub">{activeRole==="contractor"?"Your performance and reviews":activeRole==="owner"?"Insights across your portfolio":"Property and maintenance insights"}</div></div></div>
+
+    <div className="stats-row" style={{gridTemplateColumns:"repeat(4,1fr)"}}>
+      <StatCard label="Total Work Orders" value={stats.wos.length} icon="📋"/>
+      <StatCard label="Completed" value={stats.completed.length} color="var(--success)" icon="✅"/>
+      <StatCard label="Completion Rate" value={stats.wos.length?Math.round(stats.completed.length/stats.wos.length*100)+"%":"—"} color="var(--forest)" icon="📊"/>
+      <StatCard label="Urgent Open" value={stats.urgent.length} color={stats.urgent.length?"var(--error)":undefined} icon="🚨"/>
+    </div>
+
+    {/* Contractor performance leaderboard */}
+    {(activeRole==="manager"||activeRole==="owner")&&stats.contractorPerf.length>0&&<div className="panel"><div className="panel-header"><div className="panel-title">Contractor <em>Performance</em></div><span style={{fontSize:11,color:"var(--text-muted)"}}>{stats.contractorPerf.length} active</span></div>
+      {stats.contractorPerf.map(c=><div key={c.contractor.id} className="list-row" style={{gap:14}}>
+        <div className="avatar-sm">{initials(c.contractor.name)}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div className="row-title">{c.contractor.name}</div>
+          <div className="row-sub">{c.contractor.trade||c.contractor.company_name||"Contractor"}</div>
+        </div>
+        <div style={{textAlign:"center",minWidth:60}}>
+          <div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700,color:"var(--forest)"}}>{c.done}/{c.total}</div>
+          <div style={{fontSize:9,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Jobs</div>
+        </div>
+        <div style={{textAlign:"center",minWidth:60}}>
+          <div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700,color:c.rate>=70?"var(--success)":c.rate>=40?"var(--warning)":"var(--error)"}}>{c.rate}%</div>
+          <div style={{fontSize:9,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>Rate</div>
+        </div>
+        {c.reviewCount>0&&<div style={{textAlign:"center",minWidth:54}}>
+          <div style={{fontFamily:"var(--font-display)",fontSize:16,fontWeight:700,color:"var(--warning)"}}>★ {c.rating.toFixed(1)}</div>
+          <div style={{fontSize:9,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",color:"var(--text-muted)"}}>{c.reviewCount} {c.reviewCount===1?"review":"reviews"}</div>
+        </div>}
+      </div>)}
     </div>}
+
+    <div className="content-grid">
+      <div>
+        {/* By Category */}
+        {stats.categories.length>0&&<div className="panel">
+          <div className="panel-header"><div className="panel-title">Work Orders by <em>Category</em></div></div>
+          <div style={{padding:"16px 24px 20px"}}>
+            {stats.categories.map(({cat,count})=>{const max=stats.categories[0].count;const pct=Math.round(count/max*100);return <div key={cat} style={{padding:"6px 0",display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:18,width:24,textAlign:"center"}}>{catIcons[cat]||"📋"}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}><span style={{fontWeight:500,textTransform:"capitalize"}}>{cat}</span><strong>{count}</strong></div>
+                <div style={{height:6,background:"var(--sand)",borderRadius:6,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:"var(--forest)",borderRadius:6,transition:"width .4s"}}/></div>
+              </div>
+            </div>;})}
+          </div>
+        </div>}
+      </div>
+      <div>
+        {/* Reviews — contractor's own, or all reviews for manager */}
+        <div className="panel"><div className="panel-header"><div className="panel-title">{activeRole==="contractor"?"My ":""}<em>Reviews</em></div>{activeRole==="contractor"&&myReviews.length>0&&<span className="badge b-amber">★ {myAvg.toFixed(1)}</span>}</div>
+          {(activeRole==="contractor"?myReviews:data.reviews).length===0&&<EmptyState icon="⭐" text="No reviews yet" sub={activeRole==="contractor"?"Reviews appear after completed jobs":"Manager reviews of contractors will appear here"}/>}
+          {(activeRole==="contractor"?myReviews:data.reviews).slice(0,5).map(r=>{const c=data.users.find(u=>u.id===r.contractor_id);return <div key={r.id} style={{padding:"14px 24px",borderBottom:"1px solid rgba(0,83,87,.06)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {activeRole!=="contractor"&&c&&<><div className="avatar-sm" style={{width:28,height:28,fontSize:11}}>{initials(c.name)}</div><span style={{fontSize:13,fontWeight:600}}>{c.name}</span></>}
+                <div style={{display:"flex",gap:1}}>{Array(5).fill(0).map((_,i)=><span key={i} style={{color:i<r.stars?"var(--warning)":"var(--sand-dark)",fontSize:14}}>★</span>)}</div>
+              </div>
+              <span style={{fontSize:11,color:"var(--text-muted)"}}>{r.location_label}</span>
+            </div>
+            <div style={{fontSize:13,lineHeight:1.5,color:"var(--text-body)"}}>{r.text}</div>
+          </div>;})}
+        </div>
+      </div>
+    </div>
   </AppShell>;
 }
 
@@ -1166,15 +1337,74 @@ function ReportsPage() {
    FINANCIALS PAGE
    ═══════════════════════════════════════════ */
 function FinancialsPage() {
-  const {data}=useApp();
-  const paid=data.payments.filter(p=>p.status==="paid");
-  const totalCollected=paid.reduce((s,p)=>s+p.amount,0);
-  const pending=data.payments.filter(p=>p.status!=="paid"&&p.status!=="cancelled");
+  const {user,activeRole,data,navigate}=useApp();
+  const fin=useMemo(()=>{
+    const scopePayments=activeRole==="owner"?data.payments.filter(p=>data.properties.some(pr=>pr.id===p.property_id&&pr.owner_id===user.id)):data.payments;
+    const paid=scopePayments.filter(p=>p.status==="paid");
+    const overdue=scopePayments.filter(p=>p.status==="overdue");
+    const pending=scopePayments.filter(p=>p.status==="pending");
+    const totalCollected=paid.reduce((s,p)=>s+(+p.amount||0),0);
+    const totalOverdue=overdue.reduce((s,p)=>s+(+p.amount||0),0);
+    const totalPending=pending.reduce((s,p)=>s+(+p.amount||0),0);
+    // Expenses (outflow)
+    const scopeExpenses=activeRole==="owner"?(data.expenses||[]).filter(e=>data.properties.some(pr=>pr.id===e.property_id&&pr.owner_id===user.id)):(data.expenses||[]);
+    const totalSpent=scopeExpenses.reduce((s,e)=>s+(+e.amount||0),0);
+    const netCash=totalCollected-totalSpent;
+    // By payment type
+    const byType={};
+    scopePayments.forEach(p=>{byType[p.type]=(byType[p.type]||0)+(+p.amount||0);});
+    const types=Object.entries(byType).map(([k,v])=>({type:k,total:v})).sort((a,b)=>b.total-a.total);
+    return {scopePayments,paid,overdue,pending,totalCollected,totalOverdue,totalPending,totalSpent,netCash,types};
+  },[user,activeRole,data]);
+
+  const typeIcon={rent:"🏠",deposit:"🔒",maintenance:"🔧",management_fee:"💼",late_fee:"⚠️",other:"💰"};
+  const typeLabel={rent:"Rent",deposit:"Security Deposits",maintenance:"Maintenance",management_fee:"Management Fees",late_fee:"Late Fees",other:"Other"};
+
   return <AppShell page="financials">
-    <div className="page-header"><div><div className="page-title"><em>Financials</em></div><div className="page-sub">Revenue and payment overview</div></div></div>
-    <div className="stats-row"><StatCard label="Total Collected" value={`$${totalCollected.toLocaleString()}`} color="var(--success)" icon="💰"/><StatCard label="Outstanding" value={`$${pending.reduce((s,p)=>s+p.amount,0).toLocaleString()}`} color="var(--warning)" icon="⏳"/><StatCard label="Transactions" value={data.payments.length} icon="📄"/></div>
-    <div className="panel"><div className="panel-header"><div className="panel-title">Payment <em>History</em></div></div>
-      {data.payments.map(p=><div key={p.id} className="list-row"><div style={{flex:1}}><div className="row-title">{p.title||p.note||'Payment'}</div><div className="row-sub">{p.due_date} · {p.type}</div></div><div style={{fontFamily:"var(--font-display)",fontSize:16,fontWeight:700}}>${p.amount}</div><Badge c={p.status==="paid"?"b-green":p.status==="overdue"?"b-red":"b-amber"}>{p.status}</Badge></div>)}
+    <div className="page-header"><div><div className="page-title"><em>Financials</em></div><div className="page-sub">{activeRole==="owner"?"Revenue and expenses across your portfolio":"Revenue, expenses, and cash position"}</div></div></div>
+
+    <div className="stats-row" style={{gridTemplateColumns:"repeat(4,1fr)"}}>
+      <StatCard label="Collected" value={`$${fin.totalCollected.toLocaleString()}`} color="var(--success)" icon="💰" sub={`${fin.paid.length} paid`}/>
+      <StatCard label="Outstanding" value={`$${(fin.totalPending+fin.totalOverdue).toLocaleString()}`} color={fin.totalOverdue?"var(--error)":"var(--warning)"} icon="⏳" sub={fin.totalOverdue?`$${fin.totalOverdue.toLocaleString()} overdue`:`${fin.pending.length} pending`}/>
+      <StatCard label="Maintenance Spend" value={`$${fin.totalSpent.toLocaleString()}`} color="var(--blue)" icon="🔧"/>
+      <StatCard label="Net Cash Flow" value={`${fin.netCash>=0?"+":"-"}$${Math.abs(fin.netCash).toLocaleString()}`} color={fin.netCash>=0?"var(--success)":"var(--error)"} icon="📊"/>
+    </div>
+
+    <div className="content-grid">
+      <div>
+        {/* Payment History */}
+        <div className="panel"><div className="panel-header"><div className="panel-title">Payment <em>History</em></div><span className="panel-action" onClick={()=>navigate("payments")}>Manage →</span></div>
+          {fin.scopePayments.length===0&&<EmptyState icon="💰" text="No payments yet" sub="Payments will appear here as they're created"/>}
+          {fin.scopePayments.slice(0,8).map(p=>{const prop=data.properties.find(pr=>pr.id===p.property_id);return <div key={p.id} className="list-row">
+            <div style={{width:38,height:38,borderRadius:10,background:p.status==="paid"?"var(--success-bg)":p.status==="overdue"?"var(--error-bg)":"var(--warning-bg)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>{typeIcon[p.type]||"💰"}</div>
+            <div style={{flex:1,minWidth:0}}><div className="row-title">{p.title||p.note||"Payment"}</div><div className="row-sub">{prop?.address||"—"} · Due {p.due_date} · {p.type}</div></div>
+            <div style={{textAlign:"right",flexShrink:0}}><div style={{fontFamily:"var(--font-display)",fontSize:16,fontWeight:700,color:p.status==="paid"?"var(--success)":"var(--text-body)"}}>${p.amount.toLocaleString()}</div><Badge c={p.status==="paid"?"b-green":p.status==="overdue"?"b-red":"b-amber"}>{p.status}</Badge></div>
+          </div>;})}
+        </div>
+      </div>
+      <div>
+        {/* Revenue by Type */}
+        {fin.types.length>0&&<div className="panel"><div className="panel-header"><div className="panel-title">Revenue by <em>Type</em></div></div>
+          <div style={{padding:"16px 20px 20px"}}>
+            {fin.types.map(({type,total})=>{const max=fin.types[0].total;const pct=Math.round(total/max*100);return <div key={type} style={{padding:"6px 0",display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:18,width:24,textAlign:"center"}}>{typeIcon[type]||"💰"}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4,gap:8}}><span style={{fontWeight:500}}>{typeLabel[type]||type}</span><strong>${total.toLocaleString()}</strong></div>
+                <div style={{height:5,background:"var(--sand)",borderRadius:5,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:"var(--forest)",borderRadius:5,transition:"width .4s"}}/></div>
+              </div>
+            </div>;})}
+          </div>
+        </div>}
+
+        {/* Quick links */}
+        <div className="panel"><div className="panel-header"><div className="panel-title">Quick <em>Actions</em></div></div>
+          <div style={{padding:"14px 20px 18px",display:"flex",flexDirection:"column",gap:8}}>
+            <button className="btn-sm ghost" style={{justifyContent:"flex-start",padding:"10px 14px"}} onClick={()=>navigate("payments")}>{icons.pay} View all payments</button>
+            <button className="btn-sm ghost" style={{justifyContent:"flex-start",padding:"10px 14px"}} onClick={()=>navigate("expenses")}>{icons.receipt} View all expenses</button>
+            <button className="btn-sm ghost" style={{justifyContent:"flex-start",padding:"10px 14px"}} onClick={()=>navigate("reports")}>{icons.report} Open reports</button>
+          </div>
+        </div>
+      </div>
     </div>
   </AppShell>;
 }
@@ -1218,6 +1448,34 @@ function ExpensesPage() {
   const properties=activeRole==="owner"?data.properties.filter(p=>p.owner_id===user.id):data.properties.filter(p=>p.manager_id===user.id||activeRole==="contractor");
   const contractors=data.users.filter(u=>u.roles?.includes("contractor"));
 
+  // Trends: spending grouped by month (last 6) and by work order category
+  const trends=useMemo(()=>{
+    const now=new Date();
+    const months=[];
+    for(let i=5;i>=0;i--){
+      const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+      months.push({key:`${d.getFullYear()}-${d.getMonth()}`,label:d.toLocaleString('en',{month:'short'}),total:0});
+    }
+    // Use full unfiltered scope for trends (so filters don't blank the chart)
+    const scope=activeRole==="contractor"?expenses.filter(e=>e.contractor_id===user.id):activeRole==="owner"?expenses.filter(e=>data.properties.some(p=>p.owner_id===user.id&&p.id===e.property_id)):expenses;
+    scope.forEach(e=>{
+      const d=new Date(e.created_at);
+      const key=`${d.getFullYear()}-${d.getMonth()}`;
+      const m=months.find(mo=>mo.key===key);
+      if(m) m.total+=(+e.amount||0);
+    });
+    // Category breakdown via work order category
+    const catMap={};
+    scope.forEach(e=>{
+      const wo=data.workOrders.find(w=>w.id===e.work_order_id);
+      const cat=wo?.category||"other";
+      catMap[cat]=(catMap[cat]||0)+(+e.amount||0);
+    });
+    const categories=Object.entries(catMap).map(([cat,total])=>({cat,total})).sort((a,b)=>b.total-a.total).slice(0,5);
+    const maxMonth=Math.max(...months.map(m=>m.total),1);
+    return {months,categories,maxMonth,scopeTotal:scope.reduce((s,e)=>s+(+e.amount||0),0)};
+  },[expenses,activeRole,user,data.workOrders,data.properties]);
+
   return <AppShell page="expenses">
     <div className="page-header"><div><div className="page-title">Track <em>Expenses</em></div><div className="page-sub">{activeRole==="contractor"?"Your logged job expenses":activeRole==="owner"?"Spending across your properties":"Review and approve maintenance spending"}</div></div></div>
 
@@ -1227,6 +1485,35 @@ function ExpensesPage() {
       <StatCard label="Approved" value={`$${totals.approved.toFixed(2)}`} color="var(--success)" icon="✓"/>
       <StatCard label="Records" value={myExpenses.length} icon="📋"/>
     </div>
+
+    {/* Trends & Breakdown (Day 28) */}
+    {trends.scopeTotal>0&&<div className="trends-grid">
+      <div className="panel" style={{margin:0}}>
+        <div className="panel-header"><div className="panel-title">Monthly <em>Spending</em></div><span style={{fontSize:11,color:"var(--text-muted)"}}>Last 6 months</span></div>
+        <div style={{padding:"16px 20px 20px"}}>
+          <div className="trend-bars">
+            {trends.months.map(m=>{const pct=Math.round(m.total/trends.maxMonth*100);return <div key={m.key} className="trend-bar-col">
+              <div className="trend-bar-val">{m.total>0?`$${m.total<1000?m.total.toFixed(0):(m.total/1000).toFixed(1)+"k"}`:""}</div>
+              <div className={`trend-bar${m.total===0?" empty":""}`} style={{height:`${Math.max(pct,m.total>0?6:2)}%`}}/>
+              <div className="trend-bar-label">{m.label}</div>
+            </div>;})}
+          </div>
+        </div>
+      </div>
+      <div className="panel" style={{margin:0}}>
+        <div className="panel-header"><div className="panel-title">By <em>Category</em></div><span style={{fontSize:11,color:"var(--text-muted)"}}>Top 5</span></div>
+        <div style={{padding:"16px 20px 20px"}}>
+          {trends.categories.length===0&&<div style={{fontSize:13,color:"var(--text-muted)",textAlign:"center",padding:"16px 0"}}>No category data yet</div>}
+          {trends.categories.map(({cat,total})=>{const pct=Math.round(total/(trends.categories[0].total||1)*100);const icons={hvac:"❄️",plumbing:"🔧",electrical:"⚡",roofing:"🏠",appliances:"🔌",landscaping:"🌳",painting:"🎨",general:"🛠️",other:"📋"};return <div key={cat} style={{padding:"6px 0",display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:18}}>{icons[cat]||"📋"}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4,gap:8}}><span style={{fontWeight:500,textTransform:"capitalize"}}>{cat}</span><strong style={{flexShrink:0}}>${total.toFixed(0)}</strong></div>
+              <div style={{height:5,background:"var(--sand)",borderRadius:5,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:"var(--forest)",borderRadius:5,transition:"width .4s"}}/></div>
+            </div>
+          </div>;})}
+        </div>
+      </div>
+    </div>}
 
     <div className="filter-bar" style={{flexWrap:"wrap",gap:8}}>
       {[["all","All"],["pending","Pending"],["approved","Approved"]].map(([k,l])=><div key={k} className={`ftab${statusFilter===k?" active":""}`} onClick={()=>setStatusFilter(k)}>{l}</div>)}
@@ -1290,7 +1577,7 @@ function AccountPage() {
     <div style={{maxWidth:560}}>
       <div className="panel" style={{padding:28}}>
         <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
-          <div style={{width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,var(--blue),var(--forest-mid))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:"white",fontFamily:"var(--font-display)"}}>{user.name.split(" ").map(w=>w[0]).join("")}</div>
+          <div style={{width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,var(--blue),var(--forest-mid))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:"white",fontFamily:"var(--font-display)"}}>{initials(user.name)}</div>
           <div><div style={{fontSize:18,fontWeight:700}}>{user.name}</div><div style={{fontSize:13,color:"var(--text-muted)"}}>{user.roles.map(r=>r.charAt(0).toUpperCase()+r.slice(1)).join(" · ")}</div></div>
         </div>
         <Field label="Full Name"><input className="fi no-icon" value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field>
@@ -1415,18 +1702,18 @@ export default function App() {
             }
           }
           // No session — show landing with seed data so demo login works
-          const s = loadStore();
-          setDataState(s || SEED);
+          const s = sanitizeStore(loadStore()) || SEED;
+          setDataState(s);
         } catch {
-          const s = loadStore();
-          setDataState(s || SEED);
+          const s = sanitizeStore(loadStore()) || SEED;
+          setDataState(s);
         } finally {
           setLoading(false);
         }
         return;
       }
-      const s = loadStore();
-      setDataState(s || SEED);
+      const s = sanitizeStore(loadStore()) || SEED;
+      setDataState(s);
       setLoading(false);
     }
     init();

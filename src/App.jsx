@@ -129,8 +129,8 @@ function SlidePanel({title,sub,onClose,children,size="lg"}) {
 
 function EmptyState({icon,text,sub}) { return <div className="empty-state"><div className="empty-icon">{icon}</div><div className="empty-text">{text}</div>{sub&&<div style={{fontSize:13,color:"var(--text-muted)",marginTop:4}}>{sub}</div>}</div>; }
 
-function StatCard({label,value,color,icon,sub}) {
-  return <div className="stat-card"><div><div className="stat-label">{label}</div><div className="stat-value" style={{color:color||"var(--black)"}}>{value}</div>{sub&&<div style={{fontSize:12,color:"var(--text-muted)",marginTop:4}}>{sub}</div>}</div>{icon&&<div className="stat-icon" style={{background:color?color+"18":"var(--forest-mist)"}}><span style={{fontSize:20}}>{icon}</span></div>}</div>;
+function StatCard({label,value,color,icon,sub,onClick}) {
+  return <div className="stat-card" onClick={onClick} style={onClick?{cursor:"pointer"}:undefined}><div><div className="stat-label">{label}</div><div className="stat-value" style={{color:color||"var(--black)"}}>{value}</div>{sub&&<div style={{fontSize:12,color:"var(--text-muted)",marginTop:4}}>{sub}</div>}</div>{icon&&<div className="stat-icon" style={{background:color?color+"18":"var(--forest-mist)"}}><span style={{fontSize:20}}>{icon}</span></div>}</div>;
 }
 
 function Field({label,children,sub}) { return <div className="field"><label className="field-label">{label}</label>{sub&&<div className="field-sub">{sub}</div>}{children}</div>; }
@@ -163,9 +163,10 @@ function AppShell({page,children}) {
 
   // Notifications
   const notifications = [
-    ...data.workOrders.filter(w=>w.priority==="urgent"&&w.stage<9).map(w=>({id:w.id,icon:"🔴",text:`Urgent: ${w.title}`,sub:w.wo_number||"Work Order",page:"workorders"})),
-    ...data.payments.filter(p=>p.status==="overdue").map(p=>({id:p.id,icon:"⚠️",text:`Overdue payment: $${p.amount}`,sub:data.properties.find(pr=>pr.id===p.property_id)?.address||"Payment",page:"payments"})),
-    ...data.workOrders.filter(w=>!w.contractor_id&&w.stage<9).slice(0,3).map(w=>({id:w.id,icon:"👷",text:`Unassigned: ${w.title}`,sub:"Needs contractor",page:"workorders"})),
+    ...data.workOrders.filter(w=>w.priority==="urgent"&&w.stage<9).map(w=>({id:"u-"+w.id,icon:"🔴",text:`Urgent: ${w.title}`,sub:w.wo_number||"Work Order",page:"workorders",params:{detail:w.id}})),
+    ...data.payments.filter(p=>p.status==="overdue").map(p=>({id:"o-"+p.id,icon:"⚠️",text:`Overdue payment: $${p.amount}`,sub:data.properties.find(pr=>pr.id===p.property_id)?.address||"Payment",page:"payments",params:{detail:p.id}})),
+    ...(data.expenses||[]).filter(e=>e.status==="pending").slice(0,3).map(e=>({id:"e-"+e.id,icon:"💼",text:`Pending expense: $${e.amount}`,sub:e.description.slice(0,40),page:"expenses",params:{status:"pending"}})),
+    ...data.workOrders.filter(w=>!w.contractor_id&&w.stage<9).slice(0,3).map(w=>({id:"a-"+w.id,icon:"👷",text:`Unassigned: ${w.title}`,sub:"Needs contractor",page:"workorders",params:{detail:w.id}})),
   ].slice(0,8);
 
   const pendingExpenses=(data.expenses||[]).filter(e=>e.status==="pending").length;
@@ -205,9 +206,9 @@ function AppShell({page,children}) {
       <div className="topbar-center"><div className="topbar-search-wrap" style={{position:"relative"}}><span className="ts-icon">{icons.search}</span><input placeholder="Search properties, work orders, contractors…" value={searchQ} onChange={e=>{setSearchQ(e.target.value);setSearchOpen(true);setNotifOpen(false);}} onFocus={()=>{if(sq.length>=2)setSearchOpen(true);}} onBlur={()=>setTimeout(()=>setSearchOpen(false),200)}/>
         {searchOpen&&searchResults&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:6,background:"white",borderRadius:16,boxShadow:"0 12px 48px rgba(0,0,0,.18)",border:"1px solid rgba(0,83,87,.1)",maxHeight:360,overflowY:"auto",zIndex:999,animation:"fadeUp .2s ease both"}}>
           {!hasResults&&<div style={{padding:"20px 16px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No results for "{searchQ}"</div>}
-          {searchResults.properties.length>0&&<><div style={{padding:"10px 16px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",color:"var(--text-muted)"}}>Properties</div>{searchResults.properties.map(p=><div key={p.id} className="list-row" style={{padding:"10px 16px"}} onMouseDown={()=>{setSearchQ("");setSearchOpen(false);navigate("properties");}}><span style={{fontSize:16}}>🏠</span><div><div className="row-title" style={{fontSize:13}}>{p.address}</div><div className="row-sub">{p.city}, {p.state}</div></div></div>)}</>}
-          {searchResults.workOrders.length>0&&<><div style={{padding:"10px 16px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",color:"var(--text-muted)"}}>Work Orders</div>{searchResults.workOrders.map(w=><div key={w.id} className="list-row" style={{padding:"10px 16px"}} onMouseDown={()=>{setSearchQ("");setSearchOpen(false);navigate("workorders");}}><span style={{fontSize:16}}>🔧</span><div><div className="row-title" style={{fontSize:13}}>{w.title}</div><div className="row-sub">{w.wo_number} · {w.category}</div></div></div>)}</>}
-          {searchResults.people.length>0&&<><div style={{padding:"10px 16px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",color:"var(--text-muted)"}}>People</div>{searchResults.people.map(u=><div key={u.id} className="list-row" style={{padding:"10px 16px"}} onMouseDown={()=>{setSearchQ("");setSearchOpen(false);navigate(u.roles?.includes("contractor")?"contractors":"tenants");}}><span style={{fontSize:16}}>👤</span><div><div className="row-title" style={{fontSize:13}}>{u.name}</div><div className="row-sub">{u.email}</div></div></div>)}</>}
+          {searchResults.properties.length>0&&<><div style={{padding:"10px 16px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",color:"var(--text-muted)"}}>Properties</div>{searchResults.properties.map(p=><div key={p.id} className="list-row" style={{padding:"10px 16px"}} onMouseDown={()=>{setSearchQ("");setSearchOpen(false);navigate("properties",{detail:p.id});}}><span style={{fontSize:16}}>🏠</span><div><div className="row-title" style={{fontSize:13}}>{p.address}</div><div className="row-sub">{p.city}, {p.state}</div></div></div>)}</>}
+          {searchResults.workOrders.length>0&&<><div style={{padding:"10px 16px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",color:"var(--text-muted)"}}>Work Orders</div>{searchResults.workOrders.map(w=><div key={w.id} className="list-row" style={{padding:"10px 16px"}} onMouseDown={()=>{setSearchQ("");setSearchOpen(false);navigate("workorders",{detail:w.id});}}><span style={{fontSize:16}}>🔧</span><div><div className="row-title" style={{fontSize:13}}>{w.title}</div><div className="row-sub">{w.wo_number} · {w.category}</div></div></div>)}</>}
+          {searchResults.people.length>0&&<><div style={{padding:"10px 16px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",color:"var(--text-muted)"}}>People</div>{searchResults.people.map(u=><div key={u.id} className="list-row" style={{padding:"10px 16px"}} onMouseDown={()=>{setSearchQ("");setSearchOpen(false);navigate(u.roles?.includes("contractor")?"contractors":"tenants",{detail:u.id});}}><span style={{fontSize:16}}>👤</span><div><div className="row-title" style={{fontSize:13}}>{u.name}</div><div className="row-sub">{u.email}</div></div></div>)}</>}
         </div>}
       </div></div>
       <div className="topbar-right">
@@ -215,7 +216,7 @@ function AppShell({page,children}) {
           {notifOpen&&<div style={{position:"absolute",top:"100%",right:0,marginTop:8,width:320,background:"white",borderRadius:16,boxShadow:"0 12px 48px rgba(0,0,0,.18)",border:"1px solid rgba(0,83,87,.1)",maxHeight:380,overflowY:"auto",zIndex:999,animation:"fadeUp .2s ease both"}} onClick={e=>e.stopPropagation()}>
             <div style={{padding:"14px 16px 10px",borderBottom:"1px solid rgba(0,83,87,.08)",fontFamily:"var(--font-display)",fontWeight:700,fontSize:15,color:"var(--black)"}}>Notifications</div>
             {notifications.length===0&&<div style={{padding:"24px 16px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>All caught up!</div>}
-            {notifications.map(n=><div key={n.id+n.text} className="list-row" style={{padding:"10px 16px",cursor:"pointer"}} onClick={()=>{setNotifOpen(false);navigate(n.page);}}><span style={{fontSize:16}}>{n.icon}</span><div style={{flex:1}}><div className="row-title" style={{fontSize:12}}>{n.text}</div><div className="row-sub">{n.sub}</div></div></div>)}
+            {notifications.map(n=><div key={n.id} className="list-row" style={{padding:"10px 16px",cursor:"pointer"}} onClick={()=>{setNotifOpen(false);navigate(n.page,n.params||{});}}><span style={{fontSize:16}}>{n.icon}</span><div style={{flex:1}}><div className="row-title" style={{fontSize:12}}>{n.text}</div><div className="row-sub">{n.sub}</div></div></div>)}
           </div>}
         </div>
         <div className="topbar-user" onClick={()=>navigate("account")}><div className="topbar-avatar">{userInitials}</div><span className="topbar-uname">{user.name}</span></div>
@@ -471,11 +472,11 @@ function Dashboard() {
 
     {/* Stats */}
     <div className="stats-row">
-      <StatCard label="Properties" value={myProps.length} icon="🏠"/>
-      <StatCard label="Open Work Orders" value={openWOs.length} color={openWOs.length?"var(--warning)":undefined} icon="🔧"/>
-      {activeRole!=="contractor"&&<StatCard label={activeRole==="tenant"?"Next Payment":"Pending Payments"} value={activeRole==="tenant"?`$${pendingPay.find(p=>p.recipient_id===user.id)?.amount||0}`:pendingPay.length} color={pendingPay.length?"var(--error)":undefined} icon="💰"/>}
-      {activeRole==="contractor"&&<StatCard label="Rating" value="4.9" color="var(--warning)" icon="⭐" sub={`${data.reviews.filter(r=>r.contractor_id===user.id).length} reviews`}/>}
-      {(activeRole==="manager"||activeRole==="owner")&&<StatCard label="Occupancy" value={myProps.length?Math.round(occupied/myProps.length*100)+"%":"—"} color="var(--success)" icon="📊"/>}
+      <StatCard label="Properties" value={myProps.length} icon="🏠" onClick={()=>navigate("properties")}/>
+      <StatCard label="Open Work Orders" value={openWOs.length} color={openWOs.length?"var(--warning)":undefined} icon="🔧" onClick={()=>navigate("workorders",{filter:"active"})}/>
+      {activeRole!=="contractor"&&<StatCard label={activeRole==="tenant"?"Next Payment":"Pending Payments"} value={activeRole==="tenant"?`$${pendingPay.find(p=>p.recipient_id===user.id)?.amount||0}`:pendingPay.length} color={pendingPay.length?"var(--error)":undefined} icon="💰" onClick={()=>navigate("payments",{filter:"pending"})}/>}
+      {activeRole==="contractor"&&<StatCard label="Rating" value={(()=>{const rs=data.reviews.filter(r=>r.contractor_id===user.id);return rs.length?(rs.reduce((s,r)=>s+r.stars,0)/rs.length).toFixed(1):"—";})()} color="var(--warning)" icon="⭐" sub={`${data.reviews.filter(r=>r.contractor_id===user.id).length} reviews`} onClick={()=>navigate("reports")}/>}
+      {(activeRole==="manager"||activeRole==="owner")&&<StatCard label="Occupancy" value={myProps.length?Math.round(occupied/myProps.length*100)+"%":"—"} color="var(--success)" icon="📊" onClick={()=>navigate("properties",{filter:"occupied"})}/>}
     </div>
 
     {/* ═══ WORK ORDER PIPELINE ═══ */}
@@ -575,12 +576,12 @@ function Dashboard() {
       <div>
         {/* Properties panel */}
         <div className="panel"><div className="panel-header"><div className="panel-title">{activeRole==="tenant"?"My ":""}<em>Properties</em></div><span className="panel-action" onClick={()=>navigate("properties")}>View all →</span></div>
-          {myProps.slice(0,4).map(p=><div key={p.id} className="list-row" onClick={()=>navigate("properties",{detail:p.id})}>
+          {myProps.slice(0,4).map(p=>{const woCount=data.workOrders.filter(w=>w.property_id===p.id&&w.stage<9).length;return <div key={p.id} className="list-row" onClick={()=>navigate("properties",{detail:p.id})}>
             <div className="prop-thumb" style={{background:"var(--forest-mist)"}}>{p.emoji||"🏠"}</div>
             <div style={{flex:1,minWidth:0}}><div className="row-title">{p.address}</div><div className="row-sub">{p.beds} bed · {p.baths} bath · {p.city}, {p.state}</div></div>
-            <div style={{textAlign:"center",minWidth:45}}><div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700,color:data.workOrders.filter(w=>w.property_id===p.id&&w.stage<9).length?"var(--warning)":"var(--sand-dark)"}}>{data.workOrders.filter(w=>w.property_id===p.id&&w.stage<9).length}</div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:".05em",color:"var(--text-muted)"}}>WOs</div></div>
+            <div style={{textAlign:"center",minWidth:45}}><div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:700,color:woCount?"var(--warning)":"var(--sand-dark)"}}>{woCount}</div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:".05em",color:"var(--text-muted)"}}>WOs</div></div>
             <Badge c={p.status==="occupied"?"b-green":"b-grey"}>{p.status==="occupied"?"Occupied":"Vacant"}</Badge>
-          </div>)}
+          </div>;})}
           {!myProps.length&&<EmptyState icon="🏠" text="No properties yet" sub="Add your first property to get started"/>}
         </div>
 
@@ -598,20 +599,22 @@ function Dashboard() {
       <div>
         {/* Payments */}
         <div className="panel"><div className="panel-header"><div className="panel-title"><em>Payments</em></div><span className="panel-action" onClick={()=>navigate("payments")}>View all →</span></div>
-          {data.payments.slice(0,5).map(pay=><div key={pay.id} className="list-row" onClick={()=>navigate("payments")}>
+          {data.payments.slice(0,5).map(pay=><div key={pay.id} className="list-row" onClick={()=>navigate("payments",{filter:pay.status})}>
             <div style={{width:38,height:38,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,background:pay.status==="paid"?"var(--success-bg)":pay.status==="overdue"?"var(--error-bg)":"var(--warning-bg)"}}>{pay.type==="rent"?"🏠":"🔧"}</div>
             <div style={{flex:1,minWidth:0}}><div className="row-title">{pay.title||pay.note||'Payment'}</div><div className="row-sub">{P(pay.property_id)?.address}</div></div>
             <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--font-display)",fontSize:16,fontWeight:700}}>${pay.amount}</div><Badge c={pay.status==="paid"?"b-green":pay.status==="overdue"?"b-red":"b-amber"}>{pay.status}</Badge></div>
           </div>)}
+          {!data.payments.length&&<EmptyState icon="💰" text="No payments yet"/>}
         </div>
 
         {/* Activity Feed */}
-        {activeRole!=="tenant"&&<div className="panel"><div className="panel-header"><div className="panel-title"><em>Activity</em></div></div>
-          {openWOs.slice(0,4).map(wo=>{const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{gap:10}}>
+        {activeRole!=="tenant"&&<div className="panel"><div className="panel-header"><div className="panel-title"><em>Activity</em></div><span className="panel-action" onClick={()=>navigate("workorders")}>View all →</span></div>
+          {openWOs.slice(0,4).map(wo=>{const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{gap:10}} onClick={()=>navigate("workorders",{detail:wo.id})}>
             <div style={{width:8,height:8,borderRadius:"50%",background:st.color,flexShrink:0,marginTop:5}}/>
             <div style={{flex:1,fontSize:13,color:"var(--text-body)",lineHeight:1.55}}><strong>{wo.wo_number}</strong> — {wo.title} → <span style={{color:st.color}}>{st.label}</span></div>
             <span style={{fontSize:11,color:"var(--text-muted)",flexShrink:0}}>{daysAgo(wo.created_at)}</span>
           </div>;})}
+          {!openWOs.length&&<EmptyState icon="✨" text="All caught up" sub="No active work orders"/>}
         </div>}
       </div>
     </div>
@@ -622,8 +625,11 @@ function Dashboard() {
    PROPERTIES PAGE
    ═══════════════════════════════════════════ */
 function PropertiesPage() {
-  const {user,activeRole,data,navigate,toast,createProperty,updateProperty,deleteProperty}=useApp();
-  const [search,setSearch]=useState(""); const [filter,setFilter]=useState("all"); const [showAdd,setShowAdd]=useState(false); const [detail,setDetail]=useState(null);
+  const {user,activeRole,data,navigate,toast,createProperty,updateProperty,deleteProperty,params}=useApp();
+  const [search,setSearch]=useState("");
+  const [filter,setFilter]=useState(()=>params?.filter||"all");
+  const [showAdd,setShowAdd]=useState(()=>params?.modal==="add");
+  const [detail,setDetail]=useState(()=>params?.detail||null);
   const [showEdit,setShowEdit]=useState(null); const [confirmDelete,setConfirmDelete]=useState(null);
   const [af,setAf]=useState({address:"",city:"",state:"MS",zip:"",beds:3,baths:2,type:"SFR",owner_id:"",monthly_rent:"",notes:""});
   const [ef,setEf]=useState({address:"",city:"",state:"",zip:"",beds:0,baths:0,type:"",owner_id:"",monthly_rent:0,notes:"",status:""});
@@ -737,7 +743,7 @@ function PropertiesPage() {
           {/* Work Orders */}
           {propWOs.length>0&&<div style={{marginBottom:20}}>
             <div className="sec-label">Work Orders ({propWOs.length})</div>
-            {propWOs.slice(0,6).map(wo=>{const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10}}>
+            {propWOs.slice(0,6).map(wo=>{const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10,cursor:"pointer"}} onClick={()=>{setDetail(null);navigate("workorders",{detail:wo.id});}}>
               <div className={`pri-bar pri-${wo.priority}`} style={{height:32}}/>
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{wo.wo_number} — {wo.title}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>{wo.category} · {daysAgo(wo.created_at)}</div></div>
               <Badge c={stageBadge(wo.stage)}>{st.label}</Badge>
@@ -756,7 +762,7 @@ function PropertiesPage() {
           {/* Recent Payments */}
           {propPayments.length>0&&<div style={{marginBottom:20}}>
             <div className="sec-label">Payments ({propPayments.length})</div>
-            {propPayments.slice(0,4).map(pay=><div key={pay.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10}}>
+            {propPayments.slice(0,4).map(pay=><div key={pay.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10,cursor:"pointer"}} onClick={()=>{setDetail(null);navigate("payments",{detail:pay.id});}}>
               <div style={{width:34,height:34,borderRadius:10,background:pay.status==="paid"?"var(--success-bg)":pay.status==="overdue"?"var(--error-bg)":"var(--warning-bg)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{pay.type==="rent"?"🏠":"💰"}</div>
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{pay.title||pay.note||"Payment"}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>Due: {pay.due_date} · {pay.type}</div></div>
               <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--font-display)",fontSize:15,fontWeight:700}}>${pay.amount}</div><Badge c={pay.status==="paid"?"b-green":pay.status==="overdue"?"b-red":"b-amber"}>{pay.status}</Badge></div>
@@ -797,9 +803,12 @@ function PropertiesPage() {
    WORK ORDERS PAGE (9-stage lifecycle)
    ═══════════════════════════════════════════ */
 function WorkOrdersPage() {
-  const {user,activeRole,data,navigate,toast,createWorkOrder,setWorkOrderStage,assignContractor,createExpense,setExpenseStatus,deleteExpense}=useApp();
-  const [filter,setFilter]=useState("active"); const [search,setSearch]=useState(""); const [showNew,setShowNew]=useState(false); const [detail,setDetail]=useState(null);
-  const [nf,setNf]=useState({title:"",property_id:"",category:"general",priority:"normal",notes:"",timing:"immediate",contractor_id:""});
+  const {user,activeRole,data,navigate,toast,createWorkOrder,setWorkOrderStage,assignContractor,createExpense,setExpenseStatus,deleteExpense,params}=useApp();
+  const [filter,setFilter]=useState(()=>params?.filter||"active");
+  const [search,setSearch]=useState("");
+  const [showNew,setShowNew]=useState(()=>params?.modal==="new");
+  const [detail,setDetail]=useState(()=>params?.detail||null);
+  const [nf,setNf]=useState(()=>({title:"",property_id:params?.property_id||"",category:params?.category||"general",priority:"normal",notes:"",timing:"immediate",contractor_id:""}));
   const [showExpense,setShowExpense]=useState(false);
   const [expenseForm,setExpenseForm]=useState({amount:"",description:"",payment_type:"company_card",receipt_url:null,receipt_name:null});
   const [previewReceipt,setPreviewReceipt]=useState(null);
@@ -1035,9 +1044,11 @@ function WorkOrdersPage() {
    PAYMENTS PAGE
    ═══════════════════════════════════════════ */
 function PaymentsPage() {
-  const {user,activeRole,data,toast,createPayment,markPaymentPaid}=useApp();
-  const [filter,setFilter]=useState("all"); const [showNew,setShowNew]=useState(false);
-  const [nf,setNf]=useState({title:"",property_id:"",type:"rent",amount:"",frequency:"one_time",due_date:"",recipient_id:"",note:""});
+  const {user,activeRole,data,toast,createPayment,markPaymentPaid,navigate,params}=useApp();
+  const [filter,setFilter]=useState(()=>params?.filter||"all");
+  const [showNew,setShowNew]=useState(()=>params?.modal==="new");
+  const [detail,setDetail]=useState(()=>params?.detail||null);
+  const [nf,setNf]=useState(()=>({title:"",property_id:params?.property_id||"",type:"rent",amount:"",frequency:"one_time",due_date:"",recipient_id:params?.recipient_id||"",note:""}));
 
   const pays=useMemo(()=>{
     let list=data.payments;
@@ -1060,12 +1071,12 @@ function PaymentsPage() {
       {(activeRole==="manager"||activeRole==="owner")&&<button className="btn-sm primary" onClick={()=>setShowNew(true)}>{icons.plus} New Payment</button>}
     </div>
     <div className="stats-row" style={{gridTemplateColumns:"repeat(3,1fr)"}}>
-      <StatCard label="Outstanding" value={`$${totalOut.toLocaleString()}`} color={totalOut?"var(--warning)":"var(--success)"}/>
-      <StatCard label="Pending" value={data.payments.filter(p=>p.status==="pending").length}/>
-      <StatCard label="Paid" value={data.payments.filter(p=>p.status==="paid").length} color="var(--success)"/>
+      <StatCard label="Outstanding" value={`$${totalOut.toLocaleString()}`} color={totalOut?"var(--warning)":"var(--success)"} onClick={()=>setFilter("pending")}/>
+      <StatCard label="Pending" value={data.payments.filter(p=>p.status==="pending").length} onClick={()=>setFilter("pending")}/>
+      <StatCard label="Paid" value={data.payments.filter(p=>p.status==="paid").length} color="var(--success)" onClick={()=>setFilter("paid")}/>
     </div>
     <div className="filter-bar" style={{marginBottom:16}}>{[["all","All"],["pending","Pending"],["overdue","Overdue"],["paid","Paid"]].map(([k,l])=><div key={k} className={`ftab${filter===k?" active":""}`} onClick={()=>setFilter(k)}>{l}</div>)}</div>
-    <div className="panel">{pays.map(pay=><div key={pay.id} className="list-row">
+    <div className="panel">{pays.map(pay=><div key={pay.id} className="list-row" onClick={()=>setDetail(pay.id)}>
       <div style={{width:42,height:42,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0,background:pay.status==="paid"?"var(--success-bg)":pay.status==="overdue"?"var(--error-bg)":"var(--warning-bg)"}}>{pay.type==="rent"?"🏠":pay.type==="maintenance"?"🔧":"💰"}</div>
       <div style={{flex:1,minWidth:0}}><div className="row-title">{pay.title||pay.note||'Payment'}</div><div className="row-sub">{P(pay.property_id)?.address} · Due: {pay.due_date} · {pay.frequency}</div></div>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -1073,6 +1084,28 @@ function PaymentsPage() {
         {pay.status!=="paid"&&(activeRole==="manager"||activeRole==="owner")&&<button className="btn-sm" style={{background:"var(--success)",color:"white",padding:"6px 12px",fontSize:11}} onClick={e=>{e.stopPropagation();markPaid(pay.id);}}>Mark Paid</button>}
       </div>
     </div>)}{!pays.length&&<EmptyState icon="💰" text="No payments found"/>}</div>
+
+    {/* Payment Detail */}
+    {detail&&(()=>{const pay=data.payments.find(p=>p.id===detail);if(!pay)return null;const prop=P(pay.property_id);const recipient=data.users.find(u=>u.id===pay.recipient_id);const creator=data.users.find(u=>u.id===pay.created_by);return <SlidePanel title={`<em>${pay.title||"Payment"}</em>`} sub={`${pay.type} · ${pay.frequency}`} onClose={()=>setDetail(null)}>
+      <div style={{padding:24}}>
+        <div style={{textAlign:"center",marginBottom:20,padding:"20px 16px",background:pay.status==="paid"?"var(--success-bg)":pay.status==="overdue"?"var(--error-bg)":"var(--warning-bg)",borderRadius:16}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:".08em",textTransform:"uppercase",color:"var(--text-muted)",marginBottom:6}}>Amount Due</div>
+          <div style={{fontFamily:"var(--font-display)",fontSize:38,fontWeight:700,color:pay.status==="paid"?"var(--success)":pay.status==="overdue"?"var(--error)":"var(--warning)"}}>${pay.amount.toLocaleString()}</div>
+          <Badge c={pay.status==="paid"?"b-green":pay.status==="overdue"?"b-red":"b-amber"}>{pay.status}</Badge>
+        </div>
+        <div className="sec-label">Details</div>
+        <div className="detail-grid" style={{marginBottom:20}}>
+          <div className="dg-row"><span>Property</span><strong style={{cursor:"pointer",color:"var(--forest)"}} onClick={()=>{setDetail(null);navigate("properties",{detail:prop?.id});}}>{prop?.address||"—"}</strong></div>
+          <div className="dg-row"><span>Type</span><strong style={{textTransform:"capitalize"}}>{pay.type.replace(/_/g," ")}</strong></div>
+          <div className="dg-row"><span>Frequency</span><strong style={{textTransform:"capitalize"}}>{pay.frequency.replace(/_/g," ")}</strong></div>
+          <div className="dg-row"><span>Due Date</span><strong>{pay.due_date}</strong></div>
+          {recipient&&<div className="dg-row"><span>Recipient</span><strong>{recipient.name}</strong></div>}
+          {creator&&<div className="dg-row"><span>Created by</span><strong>{creator.name}</strong></div>}
+          {pay.note&&pay.note!==pay.title&&<div className="dg-row"><span>Note</span><strong style={{textAlign:"right",maxWidth:"60%"}}>{pay.note}</strong></div>}
+        </div>
+        {pay.status!=="paid"&&(activeRole==="manager"||activeRole==="owner")&&<button className="btn-primary" style={{background:"var(--success)"}} onClick={async()=>{await markPaid(pay.id);setDetail(null);}}>Mark as Paid</button>}
+      </div>
+    </SlidePanel>;})()}
 
     {showNew&&<Modal title="New <em>Payment</em>" onClose={()=>setShowNew(false)}>
       <Field label="Title"><input className="fi no-icon" value={nf.title} onChange={e=>setNf({...nf,title:e.target.value})} placeholder="April Rent"/></Field>
@@ -1096,8 +1129,8 @@ function PaymentsPage() {
    CONTRACTORS / TENANTS PAGES
    ═══════════════════════════════════════════ */
 function PeoplePage({type}) {
-  const {data,activeRole}=useApp();
-  const [detail,setDetail]=useState(null);
+  const {data,activeRole,navigate,params}=useApp();
+  const [detail,setDetail]=useState(()=>params?.detail||null);
   const people=data.users.filter(u=>u.roles.includes(type));
   const title=type==="contractor"?"Contractors":"Tenants";
   const dp=detail?people.find(u=>u.id===detail):null;
@@ -1160,7 +1193,7 @@ function PeoplePage({type}) {
           {/* Contractor: Active Jobs */}
           {type==="contractor"&&activeJobs.length>0&&<div style={{marginBottom:20}}>
             <div className="sec-label">Active Jobs ({activeJobs.length})</div>
-            {activeJobs.map(wo=>{const p=data.properties.find(pr=>pr.id===wo.property_id);const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10}}>
+            {activeJobs.map(wo=>{const p=data.properties.find(pr=>pr.id===wo.property_id);const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10,cursor:"pointer"}} onClick={()=>{setDetail(null);navigate("workorders",{detail:wo.id});}}>
               <div className={`pri-bar pri-${wo.priority}`} style={{height:32}}/>
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{wo.wo_number} — {wo.title}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>{p?.address}</div></div>
               <Badge c={stageBadge(wo.stage)}>{st.label}</Badge>
@@ -1170,7 +1203,7 @@ function PeoplePage({type}) {
           {/* Contractor: Recent Expenses */}
           {type==="contractor"&&contractorExpenses.length>0&&<div style={{marginBottom:20}}>
             <div className="sec-label">Recent Expenses ({contractorExpenses.length})</div>
-            {contractorExpenses.slice(0,5).map(ex=><div key={ex.id} className="expense-row">
+            {contractorExpenses.slice(0,5).map(ex=><div key={ex.id} className="expense-row" style={{cursor:"pointer"}} onClick={()=>{setDetail(null);navigate("expenses",{contractor_id:dp.id});}}>
               <div className="expense-icon">{ex.payment_type==="company_card"?"💳":"💵"}</div>
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{ex.description}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>{new Date(ex.created_at).toLocaleDateString()} · {ex.payment_type==="company_card"?"Company":"Personal"}</div></div>
               <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--font-display)",fontSize:15,fontWeight:700}}>${(+ex.amount).toFixed(2)}</div><Badge c={ex.status==="approved"?"b-green":"b-amber"}>{ex.status}</Badge></div>
@@ -1190,7 +1223,7 @@ function PeoplePage({type}) {
           {/* Tenant: Recent Requests */}
           {type==="tenant"&&tenantWOs.length>0&&<div style={{marginBottom:20}}>
             <div className="sec-label">Maintenance Requests ({tenantWOs.length})</div>
-            {tenantWOs.slice(0,5).map(wo=>{const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10}}>
+            {tenantWOs.slice(0,5).map(wo=>{const st=getStage(wo.stage);return <div key={wo.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10,cursor:"pointer"}} onClick={()=>{setDetail(null);navigate("workorders",{detail:wo.id});}}>
               <div className={`pri-bar pri-${wo.priority}`} style={{height:32}}/>
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{wo.wo_number} — {wo.title}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>{daysAgo(wo.created_at)}</div></div>
               <Badge c={stageBadge(wo.stage)}>{st.label}</Badge>
@@ -1200,7 +1233,7 @@ function PeoplePage({type}) {
           {/* Tenant: Payment History */}
           {type==="tenant"&&tenantPayments.length>0&&<div style={{marginBottom:20}}>
             <div className="sec-label">Payment History ({tenantPayments.length})</div>
-            {tenantPayments.slice(0,5).map(pay=><div key={pay.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10}}>
+            {tenantPayments.slice(0,5).map(pay=><div key={pay.id} className="list-row" style={{padding:"10px 12px",border:"1px solid rgba(0,83,87,.08)",borderRadius:12,marginBottom:6,gap:10,cursor:"pointer"}} onClick={()=>{setDetail(null);navigate("payments",{detail:pay.id});}}>
               <div style={{width:34,height:34,borderRadius:10,background:pay.status==="paid"?"var(--success-bg)":pay.status==="overdue"?"var(--error-bg)":"var(--warning-bg)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{pay.type==="rent"?"🏠":"💰"}</div>
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{pay.title||pay.note||"Payment"}</div><div style={{fontSize:11,color:"var(--text-muted)"}}>Due: {pay.due_date} · {pay.type}</div></div>
               <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--font-display)",fontSize:15,fontWeight:700}}>${pay.amount}</div><Badge c={pay.status==="paid"?"b-green":pay.status==="overdue"?"b-red":"b-amber"}>{pay.status}</Badge></div>
@@ -1216,16 +1249,16 @@ function PeoplePage({type}) {
    CALENDAR PAGE (read-only)
    ═══════════════════════════════════════════ */
 function CalendarPage() {
-  const {user,activeRole,data}=useApp();
+  const {user,activeRole,data,navigate}=useApp();
   const scheduled=data.workOrders.filter(w=>w.scheduled_date&&w.stage>=5&&w.stage<9).sort((a,b)=>a.scheduled_date.localeCompare(b.scheduled_date));
   const P=id=>data.properties.find(p=>p.id===id);
   const U=id=>data.users.find(u=>u.id===id);
   return <AppShell page="calendar">
-    <div className="page-header"><div><div className="page-title"><em>Calendar</em></div><div className="page-sub">Scheduled maintenance visits</div></div></div>
+    <div className="page-header"><div><div className="page-title"><em>Calendar</em></div><div className="page-sub">Scheduled maintenance visits — click any visit to open the work order</div></div></div>
     <div className="panel">{scheduled.length?scheduled.map(wo=>{const d=new Date(wo.scheduled_date);const months=["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
-      return <div key={wo.id} className="list-row">
+      return <div key={wo.id} className="list-row" onClick={()=>navigate("workorders",{detail:wo.id})}>
         <div className="cal-date"><div className="cal-mon">{months[d.getMonth()]}</div><div className="cal-day">{d.getDate()}</div></div>
-        <div style={{flex:1,minWidth:0}}><div className="row-title">{wo.title}</div><div className="row-sub">{P(wo.property_id)?.address} · {wo.contractor_id?U(wo.contractor_id)?.name:"TBD"}</div></div>
+        <div style={{flex:1,minWidth:0}}><div className="row-title">{wo.wo_number} — {wo.title}</div><div className="row-sub">{P(wo.property_id)?.address} · {wo.contractor_id?U(wo.contractor_id)?.name:"TBD"}</div></div>
         <div style={{fontSize:12,fontWeight:600,color:"var(--forest)"}}>{wo.scheduled_time||"TBD"}</div>
       </div>;
     }):<EmptyState icon="📅" text="No scheduled visits" sub="Work orders will appear here once scheduled"/>}</div>
@@ -1236,7 +1269,7 @@ function CalendarPage() {
    REPORTS PAGE
    ═══════════════════════════════════════════ */
 function ReportsPage() {
-  const {user,activeRole,data}=useApp();
+  const {user,activeRole,data,navigate}=useApp();
   const stats=useMemo(()=>{
     const wos = activeRole==="contractor" ? data.workOrders.filter(w=>w.contractor_id===user.id) :
                 activeRole==="owner" ? data.workOrders.filter(w=>data.properties.some(p=>p.id===w.property_id&&p.owner_id===user.id)) :
@@ -1276,7 +1309,7 @@ function ReportsPage() {
 
     {/* Contractor performance leaderboard */}
     {(activeRole==="manager"||activeRole==="owner")&&stats.contractorPerf.length>0&&<div className="panel"><div className="panel-header"><div className="panel-title">Contractor <em>Performance</em></div><span style={{fontSize:11,color:"var(--text-muted)"}}>{stats.contractorPerf.length} active</span></div>
-      {stats.contractorPerf.map(c=><div key={c.contractor.id} className="list-row" style={{gap:14}}>
+      {stats.contractorPerf.map(c=><div key={c.contractor.id} className="list-row" style={{gap:14}} onClick={()=>navigate("contractors",{detail:c.contractor.id})}>
         <div className="avatar-sm">{initials(c.contractor.name)}</div>
         <div style={{flex:1,minWidth:0}}>
           <div className="row-title">{c.contractor.name}</div>
@@ -1375,7 +1408,7 @@ function FinancialsPage() {
         {/* Payment History */}
         <div className="panel"><div className="panel-header"><div className="panel-title">Payment <em>History</em></div><span className="panel-action" onClick={()=>navigate("payments")}>Manage →</span></div>
           {fin.scopePayments.length===0&&<EmptyState icon="💰" text="No payments yet" sub="Payments will appear here as they're created"/>}
-          {fin.scopePayments.slice(0,8).map(p=>{const prop=data.properties.find(pr=>pr.id===p.property_id);return <div key={p.id} className="list-row">
+          {fin.scopePayments.slice(0,8).map(p=>{const prop=data.properties.find(pr=>pr.id===p.property_id);return <div key={p.id} className="list-row" onClick={()=>navigate("payments",{detail:p.id})}>
             <div style={{width:38,height:38,borderRadius:10,background:p.status==="paid"?"var(--success-bg)":p.status==="overdue"?"var(--error-bg)":"var(--warning-bg)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>{typeIcon[p.type]||"💰"}</div>
             <div style={{flex:1,minWidth:0}}><div className="row-title">{p.title||p.note||"Payment"}</div><div className="row-sub">{prop?.address||"—"} · Due {p.due_date} · {p.type}</div></div>
             <div style={{textAlign:"right",flexShrink:0}}><div style={{fontFamily:"var(--font-display)",fontSize:16,fontWeight:700,color:p.status==="paid"?"var(--success)":"var(--text-body)"}}>${p.amount.toLocaleString()}</div><Badge c={p.status==="paid"?"b-green":p.status==="overdue"?"b-red":"b-amber"}>{p.status}</Badge></div>
@@ -1413,10 +1446,10 @@ function FinancialsPage() {
    EXPENSES PAGE — Manager Review & Approval (Module 3)
    ═══════════════════════════════════════════ */
 function ExpensesPage() {
-  const {user,activeRole,data,setExpenseStatus,deleteExpense,navigate}=useApp();
-  const [statusFilter,setStatusFilter]=useState("all");
-  const [propertyFilter,setPropertyFilter]=useState("all");
-  const [contractorFilter,setContractorFilter]=useState("all");
+  const {user,activeRole,data,setExpenseStatus,deleteExpense,navigate,params}=useApp();
+  const [statusFilter,setStatusFilter]=useState(()=>params?.status||"all");
+  const [propertyFilter,setPropertyFilter]=useState(()=>params?.property_id||"all");
+  const [contractorFilter,setContractorFilter]=useState(()=>params?.contractor_id||"all");
   const [search,setSearch]=useState("");
   const [previewReceipt,setPreviewReceipt]=useState(null);
 
@@ -1480,9 +1513,9 @@ function ExpensesPage() {
     <div className="page-header"><div><div className="page-title">Track <em>Expenses</em></div><div className="page-sub">{activeRole==="contractor"?"Your logged job expenses":activeRole==="owner"?"Spending across your properties":"Review and approve maintenance spending"}</div></div></div>
 
     <div className="stats-row" style={{gridTemplateColumns:"repeat(4,1fr)"}}>
-      <StatCard label="Total Expenses" value={`$${totals.all.toFixed(2)}`} icon="💼"/>
-      <StatCard label="Pending Review" value={`$${totals.pending.toFixed(2)}`} color={totals.pending?"var(--warning)":undefined} icon="⏳"/>
-      <StatCard label="Approved" value={`$${totals.approved.toFixed(2)}`} color="var(--success)" icon="✓"/>
+      <StatCard label="Total Expenses" value={`$${totals.all.toFixed(2)}`} icon="💼" onClick={()=>setStatusFilter("all")}/>
+      <StatCard label="Pending Review" value={`$${totals.pending.toFixed(2)}`} color={totals.pending?"var(--warning)":undefined} icon="⏳" onClick={()=>setStatusFilter("pending")}/>
+      <StatCard label="Approved" value={`$${totals.approved.toFixed(2)}`} color="var(--success)" icon="✓" onClick={()=>setStatusFilter("approved")}/>
       <StatCard label="Records" value={myExpenses.length} icon="📋"/>
     </div>
 
